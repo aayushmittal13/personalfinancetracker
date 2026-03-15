@@ -1,0 +1,31 @@
+// reminder.js - notify if nothing logged today
+const cron = require('node-cron');
+const pool = require('../../db/pool');
+
+// Run at 9pm every day
+cron.schedule('0 21 * * *', async () => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) as count FROM transactions WHERE date = $1 AND source = 'manual'`,
+      [today]
+    );
+    if (parseInt(rows[0].count) === 0) {
+      console.log(`[Reminder] No manual transactions logged today (${today})`);
+      // Update a flag in settings that the frontend can poll
+      await pool.query(`
+        INSERT INTO settings (key, value) VALUES ('reminder_pending', 'true')
+        ON CONFLICT (key) DO UPDATE SET value='true', updated_at=NOW()
+      `);
+    } else {
+      await pool.query(`
+        INSERT INTO settings (key, value) VALUES ('reminder_pending', 'false')
+        ON CONFLICT (key) DO UPDATE SET value='false', updated_at=NOW()
+      `);
+    }
+  } catch (err) {
+    console.error('[Reminder] Error:', err.message);
+  }
+});
+
+console.log('[Reminder] Cron scheduled');

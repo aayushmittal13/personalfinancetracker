@@ -24,5 +24,6 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Paisa backend running on ${PORT}`));
 
 // Start cron jobs
-require('./jobs/reminder');
-require('./jobs/gmailSync');
+// Start cron jobs - wrapped so startup errors don't break the server
+try { require('./jobs/reminder'); } catch(e) { console.error('Reminder job failed to load:', e.message); }
+try { require('./jobs/gmailSync'); } catch(e) { console.error('Gmail sync job failed to load:', e.message); }

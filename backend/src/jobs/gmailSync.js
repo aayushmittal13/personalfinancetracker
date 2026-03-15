@@ -1,5 +1,6 @@
 const cron = require('node-cron');
-const { syncGmail } = require('../routes/gmail');
+const gmailRouter = require('../routes/gmail');
+const syncGmail = gmailRouter.syncGmail;
 
 // Sync every 4 hours
 cron.schedule('0 */4 * * *', async () => {

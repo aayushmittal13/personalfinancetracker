@@ -2,8 +2,8 @@
 const cron = require('node-cron');
 const pool = require('../../db/pool');
 
-// Run at 9pm every day
-cron.schedule('0 21 * * *', async () => {
+// Run at 9pm every day IST (3:30pm UTC)
+cron.schedule('30 15 * * *', async () => {
   try {
     const today = new Date().toISOString().slice(0, 10);
     const { rows } = await pool.query(

@@ -138,5 +138,8 @@ async function syncGmail() {
   return { imported, skipped, total: messages.length };
 }
 
+// Export router as default for Express mounting
+// Export syncGmail as named export for cron job
 module.exports = router;
 module.exports.syncGmail = syncGmail;
+router.syncGmail = syncGmail;

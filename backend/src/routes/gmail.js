@@ -38,6 +38,12 @@ router.get('/callback', async (req, res) => {
   }
 });
 
+// POST /api/gmail/reset-sync - reset last sync to pull older emails
+router.post('/reset-sync', async (req, res) => {
+  await pool.query(`DELETE FROM settings WHERE key='gmail_last_sync'`);
+  res.json({ ok: true, message: 'Last sync reset. Next sync will fetch last 30 days.' });
+});
+
 // POST /api/gmail/sync - pull new emails and parse transactions
 router.post('/sync', async (req, res) => {
   try {
@@ -72,7 +78,7 @@ async function syncGmail() {
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
   const lastSyncRow = await pool.query(`SELECT value FROM settings WHERE key='gmail_last_sync'`);
-  const lastSync = lastSyncRow.rows[0]?.value || 'now-7d';
+  const lastSync = lastSyncRow.rows[0]?.value || Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000).toString();
   console.log('[Gmail Sync] Last sync:', lastSync);
 
   const query = [

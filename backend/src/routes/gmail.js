@@ -26,12 +26,14 @@ router.get('/callback', async (req, res) => {
   try {
     const oauth2Client = getOAuthClient();
     const { tokens } = await oauth2Client.getToken(req.query.code);
+    console.log('[Gmail OAuth] Tokens received:', JSON.stringify({ has_refresh: !!tokens.refresh_token }));
     await pool.query(`
       INSERT INTO settings (key, value) VALUES ('gmail_tokens', $1)
       ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()
     `, [JSON.stringify(tokens)]);
     res.send('Gmail connected. You can close this tab.');
   } catch (err) {
+    console.error('[Gmail OAuth Error]', err.message);
     res.status(500).send('OAuth failed: ' + err.message);
   }
 });
@@ -40,8 +42,10 @@ router.get('/callback', async (req, res) => {
 router.post('/sync', async (req, res) => {
   try {
     const result = await syncGmail();
+    console.log('[Gmail Sync Result]', JSON.stringify(result));
     res.json(result);
   } catch (err) {
+    console.error('[Gmail Sync Error]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -50,15 +54,18 @@ async function syncGmail() {
   const tokenRow = await pool.query(`SELECT value FROM settings WHERE key='gmail_tokens'`);
   if (!tokenRow.rows.length) throw new Error('Gmail not connected');
 
-  const oauth2Client = getOAuthClient();
-  oauth2Client.setCredentials(JSON.parse(tokenRow.rows[0].value));
+  const tokens = JSON.parse(tokenRow.rows[0].value);
+  console.log('[Gmail Sync] Has refresh token:', !!tokens.refresh_token);
 
-  oauth2Client.on('tokens', async (tokens) => {
-    if (tokens.refresh_token) {
+  const oauth2Client = getOAuthClient();
+  oauth2Client.setCredentials(tokens);
+
+  oauth2Client.on('tokens', async (newTokens) => {
+    if (newTokens.refresh_token) {
       await pool.query(`
         INSERT INTO settings (key, value) VALUES ('gmail_tokens', $1)
         ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()
-      `, [JSON.stringify(tokens)]);
+      `, [JSON.stringify(newTokens)]);
     }
   });
 
@@ -66,14 +73,18 @@ async function syncGmail() {
 
   const lastSyncRow = await pool.query(`SELECT value FROM settings WHERE key='gmail_last_sync'`);
   const lastSync = lastSyncRow.rows[0]?.value || 'now-7d';
+  console.log('[Gmail Sync] Last sync:', lastSync);
 
   const query = [
     'from:(alerts@hdfcbank.net OR hdfcbank@hdfcbank.com OR alerts@hdfcbank.bank.in OR creditcards@axisbank.com OR icicibank@icicibank.com OR indusind@indusindbank.com)',
     `after:${lastSync}`
   ].join(' ');
 
+  console.log('[Gmail Sync] Query:', query);
+
   const listRes = await gmail.users.messages.list({ userId: 'me', q: query, maxResults: 100 });
   const messages = listRes.data.messages || [];
+  console.log('[Gmail Sync] Messages found:', messages.length);
 
   let imported = 0;
   let skipped = 0;
@@ -96,8 +107,13 @@ async function syncGmail() {
         }
       }
 
+      console.log('[Gmail Sync] Parsing:', subject, '|', from);
       const parsed = parseEmail(subject, body, from);
-      if (!parsed) { skipped++; continue; }
+      if (!parsed) {
+        console.log('[Gmail Sync] Could not parse:', subject);
+        skipped++;
+        continue;
+      }
 
       const accountRow = await pool.query(
         `SELECT id FROM accounts WHERE last4=$1 LIMIT 1`,
@@ -114,9 +130,10 @@ async function syncGmail() {
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'gmail', $8)
       `, [parsed.date, parsed.description, parsed.amount, parsed.type, account_id, category_id, msg.id, body.slice(0, 500)]);
 
+      console.log('[Gmail Sync] Imported:', parsed.description, parsed.amount);
       imported++;
     } catch (e) {
-      console.error('Error parsing message', msg.id, e.message);
+      console.error('[Gmail Sync] Error parsing message', msg.id, e.message);
       skipped++;
     }
   }

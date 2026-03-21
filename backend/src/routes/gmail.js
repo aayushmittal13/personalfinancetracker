@@ -38,13 +38,8 @@ router.get('/callback', async (req, res) => {
   }
 });
 
-// POST /api/gmail/reset-sync - reset last sync to pull older emails
+// GET /api/gmail/reset-sync - reset last sync to pull older emails
 router.get('/reset-sync', async (req, res) => {
-```
-
-Push, deploy, then visit:
-```
-https://personalfinancetracker-production-fb3e.up.railway.app/api/gmail/reset-sync
   await pool.query(`DELETE FROM settings WHERE key='gmail_last_sync'`);
   res.json({ ok: true, message: 'Last sync reset. Next sync will fetch last 30 days.' });
 });
@@ -82,9 +77,9 @@ async function syncGmail() {
 
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-  const lastSyncRow = await pool.query(`SELECT value FROM settings WHERE key='gmail_last_sync'`);
-  const lastSync = lastSyncRow.rows[0]?.value || Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000).toString();
-  console.log('[Gmail Sync] Last sync:', lastSync);
+  // Always look back 30 days
+  const lastSync = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000).toString();
+  console.log('[Gmail Sync] Looking back 30 days from:', lastSync);
 
   const query = [
     'from:(alerts@hdfcbank.net OR hdfcbank@hdfcbank.com OR alerts@hdfcbank.bank.in OR creditcards@axisbank.com OR icicibank@icicibank.com OR indusind@indusindbank.com)',

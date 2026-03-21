@@ -39,7 +39,12 @@ router.get('/callback', async (req, res) => {
 });
 
 // POST /api/gmail/reset-sync - reset last sync to pull older emails
-router.post('/reset-sync', async (req, res) => {
+router.get('/reset-sync', async (req, res) => {
+```
+
+Push, deploy, then visit:
+```
+https://personalfinancetracker-production-fb3e.up.railway.app/api/gmail/reset-sync
   await pool.query(`DELETE FROM settings WHERE key='gmail_last_sync'`);
   res.json({ ok: true, message: 'Last sync reset. Next sync will fetch last 30 days.' });
 });

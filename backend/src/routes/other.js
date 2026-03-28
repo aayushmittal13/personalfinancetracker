@@ -103,8 +103,17 @@ investmentsRouter.get('/', async (req, res) => {
 
 investmentsRouter.get('/log', async (req, res) => {
   const { month } = req.query;
-  const start = month ? `${month}-01` : new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0,10);
-  const end   = month ? `${month}-31` : new Date(new Date().getFullYear(), new Date().getMonth()+1, 0).toISOString().slice(0,10);
+  let start, end;
+  if (month) {
+    const [y, m] = month.split('-');
+    const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+    start = `${month}-01`;
+    end = `${month}-${String(lastDay).padStart(2, '0')}`;
+  } else {
+    const now = new Date();
+    start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+  }
   const { rows } = await pool.query(`
     SELECT il.*, i.name, i.type
     FROM investment_log il
@@ -187,10 +196,10 @@ flatmatesRouter.post('/payments/confirm', async (req, res) => {
   const { rows } = await pool.query(`
     INSERT INTO flatmate_payments (flatmate_id, transaction_id, month, amount, confirmed)
     VALUES ($1,$2,$3,$4,true)
-    ON CONFLICT DO NOTHING
+    ON CONFLICT (flatmate_id, transaction_id) DO UPDATE SET confirmed=true, amount=$4
     RETURNING *
   `, [flatmate_id, transaction_id, month, amount]);
-  res.json(rows[0]);
+  res.json(rows[0] || { ok: true });
 });
 
 // GET /api/flatmates/:id/history

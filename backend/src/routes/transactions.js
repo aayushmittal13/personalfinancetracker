@@ -9,8 +9,10 @@ router.get('/', async (req, res) => {
     const params = [];
 
     if (month) {
-      params.push(month + '-01');
-      params.push(month + '-31');
+      const [y, m] = month.split('-');
+      const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+      params.push(`${month}-01`);
+      params.push(`${month}-${String(lastDay).padStart(2, '0')}`);
       where = `WHERE t.date BETWEEN $1 AND $2`;
     }
 

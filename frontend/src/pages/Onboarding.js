@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { api } from '../api/client';
 
-const STEPS = ['salary', 'accounts', 'flatmates', 'fixed', 'done'];
+const STEPS = ['salary', 'accounts', 'flatmates', 'fixed'];
 
 export default function Onboarding({ onComplete }) {
   const [step, setStep] = useState(0);
+  const [saving, setSaving] = useState(false);
   const [data, setData] = useState({
     salary: '',
     salary_day: '1',
@@ -21,22 +22,20 @@ export default function Onboarding({ onComplete }) {
   const back = () => setStep(s => s - 1);
 
   const finish = async () => {
+    if (saving) return;
+    setSaving(true);
     try {
-      // Save salary setting
-      await api.setSetting('salary', data.salary);
-      await api.setSetting('salary_day', data.salary_day);
+      if (data.salary) await api.setSetting('salary', data.salary);
+      if (data.salary_day) await api.setSetting('salary_day', data.salary_day);
 
-      // Save accounts
       for (const acc of data.accounts) {
-        if (acc.name && acc.bank) await api.addAccount(acc).catch(() => {});
+        if (acc.name && acc.bank && acc.last4) await api.addAccount(acc).catch(() => {});
       }
 
-      // Save flatmates
       for (const fm of data.flatmates) {
         if (fm.name && fm.expected_monthly) await api.addFlatmate(fm).catch(() => {});
       }
 
-      // Save fixed expenses
       const categories = await api.categories();
       for (const fe of data.fixed) {
         if (fe.name && fe.amount) {
@@ -45,7 +44,6 @@ export default function Onboarding({ onComplete }) {
         }
       }
 
-      // Save investments
       for (const inv of data.investments) {
         if (inv.name && inv.amount) await api.addInvestment(inv).catch(() => {});
       }
@@ -54,8 +52,15 @@ export default function Onboarding({ onComplete }) {
       onComplete();
     } catch (e) {
       alert('Setup error: ' + e.message);
+    } finally {
+      setSaving(false);
     }
   };
+
+  const removeAccount = (i) => setData(d => ({ ...d, accounts: d.accounts.filter((_, j) => j !== i) }));
+  const removeFlatmate = (i) => setData(d => ({ ...d, flatmates: d.flatmates.filter((_, j) => j !== i) }));
+  const removeFixed = (i) => setData(d => ({ ...d, fixed: d.fixed.filter((_, j) => j !== i) }));
+  const removeInvestment = (i) => setData(d => ({ ...d, investments: d.investments.filter((_, j) => j !== i) }));
 
   const updateAccount = (i, key, val) => {
     const updated = [...data.accounts];
@@ -127,7 +132,10 @@ export default function Onboarding({ onComplete }) {
           </div>
 
           {data.accounts.map((acc, i) => (
-            <div key={i} style={{ marginBottom: 16, padding: 14, background: 'var(--white)', borderRadius: 10, border: '1px solid var(--line)' }}>
+            <div key={i} style={{ marginBottom: 16, padding: 14, background: 'var(--white)', borderRadius: 10, border: '1px solid var(--line)', position: 'relative' }}>
+              {data.accounts.length > 1 && (
+                <button onClick={() => removeAccount(i)} style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none', color: 'var(--sub)', cursor: 'pointer', fontSize: 14 }}>✕</button>
+              )}
               <div className="onboarding-field">
                 <div className="modal-label">Name</div>
                 <input className="modal-input" placeholder="e.g. HDFC Savings"
@@ -185,7 +193,10 @@ export default function Onboarding({ onComplete }) {
           </div>
 
           {data.flatmates.map((fm, i) => (
-            <div key={i} style={{ marginBottom: 14, padding: 14, background: 'var(--white)', borderRadius: 10, border: '1px solid var(--line)' }}>
+            <div key={i} style={{ marginBottom: 14, padding: 14, background: 'var(--white)', borderRadius: 10, border: '1px solid var(--line)', position: 'relative' }}>
+              {data.flatmates.length > 1 && (
+                <button onClick={() => removeFlatmate(i)} style={{ position: 'absolute', top: 8, right: 10, background: 'none', border: 'none', color: 'var(--sub)', cursor: 'pointer', fontSize: 14 }}>✕</button>
+              )}
               <div className="onboarding-field">
                 <div className="modal-label">Name</div>
                 <input className="modal-input" placeholder="e.g. Rahul"
@@ -244,6 +255,7 @@ export default function Onboarding({ onComplete }) {
                 <input className="modal-input" type="number" placeholder="1" min="1" max="31"
                   value={fe.due_day} onChange={e => updateFixed(i, 'due_day', e.target.value)} />
               </div>
+              <button onClick={() => removeFixed(i)} style={{ background: 'none', border: 'none', color: 'var(--sub)', cursor: 'pointer', fontSize: 14, marginBottom: 2 }}>✕</button>
             </div>
           ))}
 
@@ -272,6 +284,7 @@ export default function Onboarding({ onComplete }) {
                 <input className="modal-input" type="number" placeholder="5"
                   value={inv.sip_day} onChange={e => updateInvestment(i, 'sip_day', e.target.value)} />
               </div>
+              <button onClick={() => removeInvestment(i)} style={{ background: 'none', border: 'none', color: 'var(--sub)', cursor: 'pointer', fontSize: 14, marginBottom: 2 }}>✕</button>
             </div>
           ))}
           <div className="add-row" onClick={() => setData(d => ({
@@ -283,7 +296,7 @@ export default function Onboarding({ onComplete }) {
 
           <div className="onboarding-btns">
             <button className="ob-btn" onClick={back}>← Back</button>
-            <button className="ob-btn primary" onClick={finish}>Finish setup →</button>
+            <button className="ob-btn primary" onClick={finish} disabled={saving}>{saving ? 'Saving...' : 'Finish setup →'}</button>
           </div>
         </div>
       )}

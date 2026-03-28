@@ -7,10 +7,13 @@ router.get('/', async (req, res) => {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     const [year, mon] = month.split('-');
     const start = `${year}-${mon}-01`;
-    const end = `${year}-${mon}-31`;
-    const prevMonth = new Date(year, parseInt(mon) - 2, 1).toISOString().slice(0, 7);
+    const lastDay = new Date(parseInt(year), parseInt(mon), 0).getDate();
+    const end = `${year}-${mon}-${String(lastDay).padStart(2, '0')}`;
+    const prevMonth = new Date(parseInt(year), parseInt(mon) - 2, 1).toISOString().slice(0, 7);
+    const [pYear, pMon] = prevMonth.split('-');
     const prevStart = `${prevMonth}-01`;
-    const prevEnd = `${prevMonth}-31`;
+    const prevLastDay = new Date(parseInt(pYear), parseInt(pMon), 0).getDate();
+    const prevEnd = `${prevMonth}-${String(prevLastDay).padStart(2, '0')}`;
 
     // Income this month
     const income = await pool.query(`

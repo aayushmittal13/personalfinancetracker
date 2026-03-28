@@ -1,6 +1,19 @@
 const router = require('express').Router();
 const pool = require('../../db/pool');
 
+function getMonthRange(month) {
+  const [yearStr, monthStr] = month.split('-');
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1;
+  const start = new Date(Date.UTC(year, monthIndex, 1));
+  const end = new Date(Date.UTC(year, monthIndex + 1, 0));
+
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10)
+  };
+}
+
 // GET /api/transactions?month=2026-03&limit=50&offset=0
 router.get('/', async (req, res) => {
   try {
@@ -9,10 +22,9 @@ router.get('/', async (req, res) => {
     const params = [];
 
     if (month) {
-      const [y, m] = month.split('-');
-      const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-      params.push(`${month}-01`);
-      params.push(`${month}-${String(lastDay).padStart(2, '0')}`);
+      const range = getMonthRange(month);
+      params.push(range.start);
+      params.push(range.end);
       where = `WHERE t.date BETWEEN $1 AND $2`;
     }
 

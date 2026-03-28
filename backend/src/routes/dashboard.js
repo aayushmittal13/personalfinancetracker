@@ -1,19 +1,27 @@
 const router = require('express').Router();
 const pool = require('../../db/pool');
 
+function getMonthRange(month) {
+  const [yearStr, monthStr] = month.split('-');
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1;
+  const start = new Date(Date.UTC(year, monthIndex, 1));
+  const end = new Date(Date.UTC(year, monthIndex + 1, 0));
+
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10)
+  };
+}
+
 // GET /api/dashboard?month=2026-03
 router.get('/', async (req, res) => {
   try {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
+    const { start, end } = getMonthRange(month);
     const [year, mon] = month.split('-');
-    const start = `${year}-${mon}-01`;
-    const lastDay = new Date(parseInt(year), parseInt(mon), 0).getDate();
-    const end = `${year}-${mon}-${String(lastDay).padStart(2, '0')}`;
-    const prevMonth = new Date(parseInt(year), parseInt(mon) - 2, 1).toISOString().slice(0, 7);
-    const [pYear, pMon] = prevMonth.split('-');
-    const prevStart = `${prevMonth}-01`;
-    const prevLastDay = new Date(parseInt(pYear), parseInt(pMon), 0).getDate();
-    const prevEnd = `${prevMonth}-${String(prevLastDay).padStart(2, '0')}`;
+    const prevMonth = new Date(Date.UTC(Number(year), Number(mon) - 2, 1)).toISOString().slice(0, 7);
+    const { start: prevStart, end: prevEnd } = getMonthRange(prevMonth);
 
     const [income, spent, spentPrev, toRecover, invested, youOwe, pendingMatch, categories, categoriesPrev, daily] = await Promise.all([
       pool.query(`
@@ -67,9 +75,7 @@ router.get('/', async (req, res) => {
       pool.query(`
         SELECT t.*, f.name as flatmate_name
         FROM transactions t
-        JOIN flatmates f ON f.upi_id = ANY(
-          SELECT regexp_matches(t.description, '[a-zA-Z0-9._-]+@[a-zA-Z]+', 'g')
-        )
+        JOIN flatmates f ON t.description ILIKE '%' || f.upi_id || '%'
         WHERE t.type='credit' AND t.source='gmail'
         AND NOT EXISTS (
           SELECT 1 FROM flatmate_payments fp WHERE fp.transaction_id = t.id AND fp.confirmed=true

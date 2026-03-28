@@ -50,7 +50,10 @@ export default function Transactions({ month }) {
   }, {});
 
   const dateLabel = (dateStr) => {
-    const d = new Date(dateStr + 'T00:00:00');
+    if (!dateStr) return 'Unknown date';
+    const normalized = String(dateStr).includes('T') ? String(dateStr) : `${dateStr}T00:00:00`;
+    const d = new Date(normalized);
+    if (Number.isNaN(d.getTime())) return 'Unknown date';
     const today = new Date();
     const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
     if (d.toDateString() === today.toDateString()) return 'Today';

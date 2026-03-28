@@ -49,6 +49,47 @@ router.get('/reset-sync', async (req, res) => {
   }
 });
 
+// GET /api/gmail/reset-imports - remove imported Gmail transactions and reset sync
+router.get('/reset-imports', async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const gmailTxnIds = await client.query(`
+      SELECT id FROM transactions WHERE source='gmail'
+    `);
+
+    const ids = gmailTxnIds.rows.map(row => row.id);
+
+    if (ids.length) {
+      await client.query(`
+        DELETE FROM flatmate_payments
+        WHERE transaction_id = ANY($1::int[])
+      `, [ids]);
+
+      await client.query(`
+        DELETE FROM transactions
+        WHERE id = ANY($1::int[])
+      `, [ids]);
+    }
+
+    await client.query(`DELETE FROM settings WHERE key='gmail_last_sync'`);
+    await client.query('COMMIT');
+
+    res.json({
+      ok: true,
+      deleted_transactions: ids.length,
+      message: 'Deleted Gmail-imported transactions and reset sync state.'
+    });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 // GET /api/gmail/status - current Gmail connection state
 router.get('/status', async (req, res) => {
   try {

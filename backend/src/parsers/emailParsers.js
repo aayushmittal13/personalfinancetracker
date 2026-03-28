@@ -5,7 +5,12 @@
 
 function parseAmount(str) {
   if (!str) return null;
-  return parseFloat(str.replace(/[,₹Rs.\s]/g, ''));
+  const normalized = String(str)
+    .replace(/₹|INR|Rs\.?/gi, '')
+    .replace(/,/g, '')
+    .trim();
+  const amount = parseFloat(normalized);
+  return Number.isFinite(amount) ? amount : null;
 }
 
 function parseDate(str) {

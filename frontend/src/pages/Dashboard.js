@@ -2,25 +2,90 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../api/client';
 
 const fmt = (n) => Math.round(n).toLocaleString('en-IN');
+const emptyGmailState = { loading: true, connected: false, hasRefreshToken: false, lastSync: null };
+const disconnectedGmailState = { loading: false, connected: false, hasRefreshToken: false, lastSync: null };
 
 export default function Dashboard({ month, setMonth }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [gmail, setGmail] = useState(emptyGmailState);
+  const [syncNotice, setSyncNotice] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { setData(await api.dashboard(month)); }
+    setGmail(prev => ({ ...prev, loading: true }));
+    try {
+      const [dashboardResult, gmailResult] = await Promise.allSettled([
+        api.dashboard(month),
+        api.gmailStatus()
+      ]);
+
+      if (dashboardResult.status === 'fulfilled') {
+        setData(dashboardResult.value);
+      } else {
+        console.error(dashboardResult.reason);
+      }
+
+      if (gmailResult.status === 'fulfilled') {
+        setGmail({ loading: false, ...gmailResult.value });
+      } else {
+        console.error(gmailResult.reason);
+        setGmail(disconnectedGmailState);
+      }
+    }
     catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [month]);
 
   useEffect(() => { load(); }, [load]);
 
+  const connectGmail = () => {
+    setSyncNotice(null);
+    window.location.href = api.gmailAuthUrl();
+  };
+
   const sync = async () => {
+    if (!gmail.connected) {
+      connectGmail();
+      return;
+    }
+
     setSyncing(true);
-    try { await api.gmailSync(); await load(); }
-    catch (e) { alert('Gmail sync failed: ' + e.message); }
+    setSyncNotice(null);
+    try {
+      const result = await api.gmailSync();
+      await load();
+
+      if (result.imported > 0) {
+        setSyncNotice({
+          tone: 'success',
+          text: `Imported ${result.imported} new transaction${result.imported === 1 ? '' : 's'}.`
+        });
+      } else if (result.total === 0) {
+        setSyncNotice({
+          tone: 'info',
+          text: 'Sync ran, but no matching bank emails were found in the last 30 days.'
+        });
+      } else {
+        setSyncNotice({
+          tone: 'info',
+          text: `Sync finished, but no new transactions were imported. ${result.skipped} email${result.skipped === 1 ? '' : 's'} were skipped.`
+        });
+      }
+    }
+    catch (e) {
+      const message = e.message || 'Unknown Gmail sync error';
+      if (message.includes('Gmail not connected')) {
+        setGmail({ loading: false, connected: false, hasRefreshToken: false, lastSync: null });
+        setSyncNotice({
+          tone: 'error',
+          text: 'Gmail is not connected yet. Tap connect Gmail, approve access, then run sync again.'
+        });
+      } else {
+        setSyncNotice({ tone: 'error', text: message });
+      }
+    }
     finally { setSyncing(false); }
   };
 
@@ -57,6 +122,13 @@ export default function Dashboard({ month, setMonth }) {
   const today = new Date().toISOString().slice(0, 10);
   const hasToday = data?.daily?.some(d => d.date === today);
   const maxBar = Math.max(...(data?.daily?.map(d => parseFloat(d.total)) || [1]));
+  const gmailLabel = gmail.loading
+    ? 'checking Gmail...'
+    : gmail.connected
+      ? (gmail.lastSync
+          ? `last sync ${new Date(gmail.lastSync).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`
+          : 'Gmail connected')
+      : 'Gmail not connected';
 
   return (
     <div>
@@ -67,11 +139,31 @@ export default function Dashboard({ month, setMonth }) {
           <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--sub)', fontSize: 16 }}>›</button>
         </div>
         <div className="topbar-right">
-          <button className="sync-btn" onClick={sync} disabled={syncing}>
-            {syncing ? 'syncing...' : '↻ sync'}
+          <div className="sync-status">
+            <span className={`sync-dot ${gmail.connected ? '' : 'offline'}`} />
+            <span>{gmailLabel}</span>
+          </div>
+          <button
+            className="sync-btn"
+            onClick={gmail.connected ? sync : connectGmail}
+            disabled={syncing || gmail.loading}
+          >
+            {gmail.connected ? (syncing ? 'syncing...' : '↻ sync') : 'connect Gmail'}
           </button>
         </div>
       </div>
+
+      {!gmail.loading && !gmail.connected && (
+        <div className="nudge">
+          Gmail is not connected yet. Tap the connect Gmail button, approve access, then come back and run sync.
+        </div>
+      )}
+
+      {syncNotice && (
+        <div className={`sync-note ${syncNotice.tone}`}>
+          {syncNotice.text}
+        </div>
+      )}
 
       {!hasToday && (
         <div className="nudge">Nothing logged today — worth a quick check.</div>

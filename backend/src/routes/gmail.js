@@ -44,6 +44,40 @@ router.get('/reset-sync', async (req, res) => {
   res.json({ ok: true, message: 'Last sync reset. Next sync will fetch last 30 days.' });
 });
 
+// GET /api/gmail/status - current Gmail connection state
+router.get('/status', async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT key, value
+    FROM settings
+    WHERE key IN ('gmail_tokens', 'gmail_last_sync')
+  `);
+
+  const settings = {};
+  rows.forEach(({ key, value }) => {
+    settings[key] = value;
+  });
+
+  let hasRefreshToken = false;
+  if (settings.gmail_tokens) {
+    try {
+      hasRefreshToken = !!JSON.parse(settings.gmail_tokens).refresh_token;
+    } catch (err) {
+      console.error('[Gmail Status] Invalid token payload:', err.message);
+    }
+  }
+
+  const lastSyncEpoch = Number(settings.gmail_last_sync);
+  const lastSync = Number.isFinite(lastSyncEpoch) && lastSyncEpoch > 0
+    ? new Date(lastSyncEpoch * 1000).toISOString()
+    : null;
+
+  res.json({
+    connected: !!settings.gmail_tokens,
+    hasRefreshToken,
+    lastSync
+  });
+});
+
 // POST /api/gmail/sync - pull new emails and parse transactions
 router.post('/sync', async (req, res) => {
   try {

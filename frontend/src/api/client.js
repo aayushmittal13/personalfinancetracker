@@ -1,13 +1,50 @@
-const BASE = process.env.REACT_APP_API_URL || '';
+const isLocalHost = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const BASE = process.env.REACT_APP_API_URL || (isLocalHost ? 'http://localhost:3001' : '');
+
+function buildApiUrl(path = '') {
+  return `${BASE}${path}`;
+}
+
+async function readResponse(res) {
+  const contentType = res.headers.get('content-type') || '';
+  const text = await res.text();
+  let json = null;
+
+  if (text && contentType.includes('application/json')) {
+    try {
+      json = JSON.parse(text);
+    } catch (err) {
+      json = null;
+    }
+  }
+
+  return { contentType, text, json };
+}
 
 async function req(method, path, body) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(buildApiUrl(path), {
     method,
     headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined
   });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
+  const { contentType, text, json } = await readResponse(res);
+
+  if (!res.ok) {
+    const message = json?.error || json?.message || text || `Request failed with status ${res.status}`;
+    throw new Error(message);
+  }
+
+  if (!text) return null;
+
+  if (contentType.includes('application/json')) {
+    return json ?? JSON.parse(text);
+  }
+
+  throw new Error(
+    BASE
+      ? 'API returned HTML instead of JSON. Check that the backend URL is correct and the backend is running.'
+      : 'API returned HTML instead of JSON. Set REACT_APP_API_URL to your backend URL.'
+  );
 }
 
 export const api = {
@@ -51,7 +88,9 @@ export const api = {
   confirmPayment: (data) => req('POST', '/api/flatmates/payments/confirm', data),
 
   // Gmail
+  gmailStatus: () => req('GET', '/api/gmail/status'),
   gmailSync: () => req('POST', '/api/gmail/sync'),
+  gmailAuthUrl: () => buildApiUrl('/api/gmail/auth'),
 
   // Settings
   settings: () => req('GET', '/api/settings'),

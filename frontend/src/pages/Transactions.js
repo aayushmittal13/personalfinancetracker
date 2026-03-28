@@ -6,7 +6,7 @@ const fmt = (n) => Math.round(Math.abs(n)).toLocaleString('en-IN');
 const EMOJIS = {
   Food: '🍜', Transport: '🚗', Subscriptions: '📺',
   Shopping: '🛒', House: '🏠', Investments: '📈',
-  Salary: '💰', Others: '💸'
+  Salary: '💰', Health: '🏥', Others: '💸'
 };
 
 export default function Transactions({ month }) {

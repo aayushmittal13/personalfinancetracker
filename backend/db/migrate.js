@@ -42,6 +42,7 @@ async function migrate() {
         ('House', '#4a8fd4'),
         ('Investments', '#1a9e6e'),
         ('Salary', '#1a9e6e'),
+        ('Health', '#d45ca0'),
         ('Others', '#94a3b8')
       ON CONFLICT (name) DO NOTHING
     `);

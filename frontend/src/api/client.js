@@ -22,11 +22,25 @@ async function readResponse(res) {
 }
 
 async function req(method, path, body) {
-  const res = await fetch(buildApiUrl(path), {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+
+  let res;
+  try {
+    res = await fetch(buildApiUrl(path), {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. Check that the backend is running.');
+    }
+    throw new Error('Network error. Check your connection and that the backend is running.');
+  }
+  clearTimeout(timeout);
   const { contentType, text, json } = await readResponse(res);
 
   if (!res.ok) {

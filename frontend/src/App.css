@@ -77,7 +77,8 @@ html, body {
   cursor: pointer;
   font-family: 'Geist Mono', monospace;
 }
-.sync-btn:hover { color: var(--text); border-color: var(--text); }
+.sync-btn:hover:not(:disabled) { color: var(--text); border-color: var(--text); }
+.sync-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .sync-note {
   margin: 0 20px 20px;

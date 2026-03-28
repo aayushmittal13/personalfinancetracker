@@ -12,9 +12,9 @@ export default function Dashboard({ month, setMonth }) {
   const [gmail, setGmail] = useState(emptyGmailState);
   const [syncNotice, setSyncNotice] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setGmail(prev => ({ ...prev, loading: true }));
+  const load = useCallback(async (background = false) => {
+    if (!background) setLoading(true);
+    setGmail(prev => ({ ...prev, loading: !background }));
     try {
       const [dashboardResult, gmailResult] = await Promise.allSettled([
         api.dashboard(month),
@@ -55,7 +55,7 @@ export default function Dashboard({ month, setMonth }) {
     setSyncNotice(null);
     try {
       const result = await api.gmailSync();
-      await load();
+      await load(true);
 
       if (result.imported > 0) {
         setSyncNotice({
@@ -75,8 +75,8 @@ export default function Dashboard({ month, setMonth }) {
       }
     }
     catch (e) {
-      const message = e.message || 'Unknown Gmail sync error';
-      if (message.includes('Gmail not connected')) {
+      const message = e?.message || (typeof e === 'string' ? e : 'Unknown Gmail sync error');
+      if (message.includes('Gmail not connected') || message.includes('not connected')) {
         setGmail({ loading: false, connected: false, hasRefreshToken: false, lastSync: null });
         setSyncNotice({
           tone: 'error',

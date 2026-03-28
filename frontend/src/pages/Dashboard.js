@@ -11,10 +11,12 @@ export default function Dashboard({ month, setMonth }) {
   const [syncing, setSyncing] = useState(false);
   const [gmail, setGmail] = useState(emptyGmailState);
   const [syncNotice, setSyncNotice] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setGmail(prev => ({ ...prev, loading: true }));
+    setLoadError(null);
     try {
       const [dashboardResult, gmailResult] = await Promise.allSettled([
         api.dashboard(month),
@@ -25,6 +27,8 @@ export default function Dashboard({ month, setMonth }) {
         setData(dashboardResult.value);
       } else {
         console.error(dashboardResult.reason);
+        setData(null);
+        setLoadError(dashboardResult.reason?.message || 'Dashboard failed to load.');
       }
 
       if (gmailResult.status === 'fulfilled') {
@@ -156,6 +160,12 @@ export default function Dashboard({ month, setMonth }) {
       {!gmail.loading && !gmail.connected && (
         <div className="nudge">
           Gmail is not connected yet. Tap the connect Gmail button, approve access, then come back and run sync.
+        </div>
+      )}
+
+      {loadError && (
+        <div className="sync-note error">
+          {loadError}
         </div>
       )}
 

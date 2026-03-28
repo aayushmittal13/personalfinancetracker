@@ -70,9 +70,7 @@ router.get('/', async (req, res) => {
     const pendingMatch = await pool.query(`
       SELECT t.*, f.name as flatmate_name
       FROM transactions t
-      JOIN flatmates f ON f.upi_id = ANY(
-        SELECT regexp_matches(t.description, '[a-zA-Z0-9._-]+@[a-zA-Z]+', 'g')
-      )
+      JOIN flatmates f ON t.description ILIKE '%' || f.upi_id || '%'
       WHERE t.type='credit' AND t.source='gmail'
       AND NOT EXISTS (
         SELECT 1 FROM flatmate_payments fp WHERE fp.transaction_id = t.id AND fp.confirmed=true

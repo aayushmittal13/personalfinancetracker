@@ -42,6 +42,7 @@ async function migrate() {
         ('House', '#4a8fd4'),
         ('Investments', '#1a9e6e'),
         ('Salary', '#1a9e6e'),
+        ('Health', '#d45ca0'),
         ('Others', '#94a3b8')
       ON CONFLICT (name) DO NOTHING
     `);
@@ -131,8 +132,14 @@ async function migrate() {
         month TEXT NOT NULL,
         transaction_id INTEGER REFERENCES transactions(id),
         confirmed BOOLEAN DEFAULT false,
-        created_at TIMESTAMPTZ DEFAULT NOW()
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(flatmate_id, transaction_id)
       )
+    `);
+
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_flatmate_payments_unique
+      ON flatmate_payments (flatmate_id, transaction_id)
     `);
 
     // Settings - salary, gmail token etc

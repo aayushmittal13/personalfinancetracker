@@ -22,11 +22,25 @@ async function readResponse(res) {
 }
 
 async function req(method, path, body) {
-  const res = await fetch(buildApiUrl(path), {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60000);
+
+  let res;
+  try {
+    res = await fetch(buildApiUrl(path), {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      throw new Error('Request timed out. Check that the backend is running.');
+    }
+    throw new Error('Network error. Check your connection and that the backend is running.');
+  }
+  clearTimeout(timeout);
   const { contentType, text, json } = await readResponse(res);
 
   if (!res.ok) {
@@ -54,6 +68,7 @@ export const api = {
   // Transactions
   transactions: (month) => req('GET', `/api/transactions?month=${month}`),
   addTransaction: (data) => req('POST', '/api/transactions', data),
+  updateTransaction: (id, data) => req('PATCH', `/api/transactions/${id}`, data),
   updateCategory: (id, category_id) => req('PATCH', `/api/transactions/${id}/category`, { category_id }),
   markSplit: (id, data) => req('PATCH', `/api/transactions/${id}/split`, data),
   deleteTransaction: (id) => req('DELETE', `/api/transactions/${id}`),
@@ -75,6 +90,7 @@ export const api = {
   // Investments
   investments: () => req('GET', '/api/investments'),
   investmentLog: (month) => req('GET', `/api/investments/log?month=${month}`),
+  investmentYtd: (year) => req('GET', `/api/investments/ytd?year=${year || new Date().getFullYear()}`),
   addInvestment: (data) => req('POST', '/api/investments', data),
   logInvestment: (data) => req('POST', '/api/investments/log', data),
   deleteInvestment: (id) => req('DELETE', `/api/investments/${id}`),

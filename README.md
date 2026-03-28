@@ -22,7 +22,6 @@ paisa/
 GOOGLE_CLIENT_ID=...
 GOOGLE_CLIENT_SECRET=...
 GOOGLE_REDIRECT_URI=https://YOUR-BACKEND-URL.railway.app/api/gmail/callback
-ANTHROPIC_API_KEY=...
 FRONTEND_URL=https://YOUR-FRONTEND-URL.railway.app
 ```
 
@@ -90,4 +89,4 @@ npm start
 ```
 
 Frontend runs on `http://localhost:3000`, backend on `http://localhost:3001`.
-The `proxy` in frontend/package.json routes API calls automatically in dev.
+The frontend API client auto-detects localhost and points to port 3001.

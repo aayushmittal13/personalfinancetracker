@@ -6,7 +6,7 @@ const fmt = (n) => Math.round(Math.abs(n)).toLocaleString('en-IN');
 const EMOJIS = {
   Food: '🍜', Transport: '🚗', Subscriptions: '📺',
   Shopping: '🛒', House: '🏠', Investments: '📈',
-  Salary: '💰', Others: '💸'
+  Salary: '💰', Health: '🏥', Others: '💸'
 };
 
 export default function Transactions({ month }) {
@@ -14,8 +14,9 @@ export default function Transactions({ month }) {
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [modal, setModal] = useState(null); // 'add' | { txn } for edit
+  const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -34,8 +35,14 @@ export default function Transactions({ month }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Group by date
-  const grouped = txns.reduce((acc, t) => {
+  const filtered = search
+    ? txns.filter(t =>
+        t.description.toLowerCase().includes(search.toLowerCase()) ||
+        (t.category_name || '').toLowerCase().includes(search.toLowerCase())
+      )
+    : txns;
+
+  const grouped = filtered.reduce((acc, t) => {
     const key = t.date;
     if (!acc[key]) acc[key] = [];
     acc[key].push(t);
@@ -61,13 +68,20 @@ export default function Transactions({ month }) {
       description: '',
       amount: '',
       category_id: categories[0]?.id || '',
-      account_id: accounts[0]?.id || ''
+      account_id: ''
     });
     setModal('add');
   };
 
   const openEdit = (txn) => {
-    setForm({ category_id: txn.category_id || '' });
+    setForm({
+      description: txn.description,
+      amount: txn.amount,
+      type: txn.type,
+      date: txn.date,
+      category_id: txn.category_id || '',
+      account_id: txn.account_id || ''
+    });
     setModal({ txn });
   };
 
@@ -80,9 +94,9 @@ export default function Transactions({ month }) {
     } catch (e) { alert(e.message); }
   };
 
-  const saveCategory = async () => {
+  const saveEdit = async () => {
     try {
-      await api.updateCategory(modal.txn.id, form.category_id);
+      await api.updateTransaction(modal.txn.id, form);
       setModal(null);
       load();
     } catch (e) { alert(e.message); }
@@ -90,9 +104,11 @@ export default function Transactions({ month }) {
 
   const deleteTxn = async (id) => {
     if (!window.confirm('Delete this transaction?')) return;
-    await api.deleteTransaction(id);
-    setModal(null);
-    load();
+    try {
+      await api.deleteTransaction(id);
+      setModal(null);
+      load();
+    } catch (e) { alert(e.message); }
   };
 
   if (loading) return <div className="loading">Loading...</div>;
@@ -103,12 +119,25 @@ export default function Transactions({ month }) {
         <div className="topbar-title">Transactions</div>
       </div>
 
+      <div style={{ padding: '0 20px 12px' }}>
+        <input
+          className="modal-input"
+          placeholder="Search transactions..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ fontSize: 12 }}
+        />
+      </div>
+
       <button className="add-txn-btn" onClick={openAdd}>
         + Add transaction
       </button>
 
       {Object.keys(grouped).length === 0 && (
-        <div className="empty">No transactions this month.<br />Add one or sync Gmail.</div>
+        <div className="empty">
+          {search ? 'No matching transactions.' : 'No transactions this month.'}<br />
+          {!search && 'Add one or sync Gmail.'}
+        </div>
       )}
 
       {Object.keys(grouped).sort((a, b) => b.localeCompare(a)).map(date => (
@@ -208,13 +237,41 @@ export default function Transactions({ month }) {
         </div>
       )}
 
-      {/* Edit / category modal */}
+      {/* Edit modal */}
       {modal?.txn && (
         <div className="modal-overlay open" onClick={e => e.target.className.includes('overlay') && setModal(null)}>
           <div className="modal">
-            <div className="modal-title">{modal.txn.description}</div>
-            <div style={{ fontSize: 12, color: 'var(--sub)', marginBottom: 20, lineHeight: 1.6 }}>
-              ₹{fmt(modal.txn.amount)} · {modal.txn.date} · {modal.txn.source}
+            <div className="modal-title">Edit transaction</div>
+
+            <div className="modal-field">
+              <div className="modal-label">Type</div>
+              <div className="type-toggle">
+                <button className={`type-btn ${form.type === 'debit' ? 'active' : ''}`}
+                  onClick={() => setForm(f => ({ ...f, type: 'debit' }))}>Expense</button>
+                <button className={`type-btn ${form.type === 'credit' ? 'active' : ''}`}
+                  onClick={() => setForm(f => ({ ...f, type: 'credit' }))}>Income</button>
+              </div>
+            </div>
+
+            <div className="modal-field">
+              <div className="modal-label">Description</div>
+              <input className="modal-input"
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+            </div>
+
+            <div className="modal-field">
+              <div className="modal-label">Amount (₹)</div>
+              <input className="modal-input" type="number"
+                value={form.amount}
+                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
+            </div>
+
+            <div className="modal-field">
+              <div className="modal-label">Date</div>
+              <input className="modal-input" type="date"
+                value={form.date}
+                onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
 
             <div className="modal-field">
@@ -227,9 +284,21 @@ export default function Transactions({ month }) {
               </select>
             </div>
 
+            {accounts.length > 0 && (
+              <div className="modal-field">
+                <div className="modal-label">Account</div>
+                <select className="modal-select"
+                  value={form.account_id}
+                  onChange={e => setForm(f => ({ ...f, account_id: e.target.value }))}>
+                  <option value="">No account</option>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+              </div>
+            )}
+
             <div className="modal-btns">
               <button className="modal-btn danger" onClick={() => deleteTxn(modal.txn.id)}>Delete</button>
-              <button className="modal-btn save" onClick={saveCategory}>Save</button>
+              <button className="modal-btn save" onClick={saveEdit}>Save</button>
             </div>
           </div>
         </div>

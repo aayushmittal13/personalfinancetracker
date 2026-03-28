@@ -23,110 +23,101 @@ router.get('/', async (req, res) => {
     const prevMonth = new Date(Date.UTC(Number(year), Number(mon) - 2, 1)).toISOString().slice(0, 7);
     const { start: prevStart, end: prevEnd } = getMonthRange(prevMonth);
 
-    // Income this month
-    const income = await pool.query(`
-      SELECT COALESCE(SUM(amount), 0) as total
-      FROM transactions
-      WHERE type='credit' AND date BETWEEN $1 AND $2
-      AND category_id = (SELECT id FROM categories WHERE name='Salary' LIMIT 1)
-    `, [start, end]);
+    const [income, spent, spentPrev, toRecover, invested, youOwe, pendingMatch, categories, categoriesPrev, daily] = await Promise.all([
+      pool.query(`
+        SELECT COALESCE(SUM(amount), 0) as total
+        FROM transactions
+        WHERE type='credit' AND date BETWEEN $1 AND $2
+        AND category_id = (SELECT id FROM categories WHERE name='Salary' LIMIT 1)
+      `, [start, end]),
 
-    // Spent this month (debits excluding investments)
-    const spent = await pool.query(`
-      SELECT COALESCE(SUM(
-        CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END
-      ), 0) as total
-      FROM transactions t
-      LEFT JOIN categories c ON t.category_id = c.id
-      WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
-      AND (c.name IS NULL OR c.name NOT IN ('Investments'))
-    `, [start, end]);
+      pool.query(`
+        SELECT COALESCE(SUM(
+          CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END
+        ), 0) as total
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
+        AND (c.name IS NULL OR c.name NOT IN ('Investments'))
+      `, [start, end]),
 
-    // Spent last month
-    const spentPrev = await pool.query(`
-      SELECT COALESCE(SUM(
-        CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END
-      ), 0) as total
-      FROM transactions t
-      LEFT JOIN categories c ON t.category_id = c.id
-      WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
-      AND (c.name IS NULL OR c.name NOT IN ('Investments'))
-    `, [prevStart, prevEnd]);
+      pool.query(`
+        SELECT COALESCE(SUM(
+          CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END
+        ), 0) as total
+        FROM transactions t
+        LEFT JOIN categories c ON t.category_id = c.id
+        WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
+        AND (c.name IS NULL OR c.name NOT IN ('Investments'))
+      `, [prevStart, prevEnd]),
 
-    // To recover - split txns not yet recovered
-    const toRecover = await pool.query(`
-      SELECT COALESCE(SUM(amount - COALESCE(split_amount, 0)), 0) as total,
-             COUNT(DISTINCT id) as count
-      FROM transactions
-      WHERE is_split=true AND is_recovered=false
-      AND date BETWEEN $1 AND $2
-    `, [start, end]);
+      pool.query(`
+        SELECT COALESCE(SUM(amount - COALESCE(split_amount, 0)), 0) as total,
+               COUNT(DISTINCT id) as count
+        FROM transactions
+        WHERE is_split=true AND is_recovered=false
+        AND date BETWEEN $1 AND $2
+      `, [start, end]),
 
-    // Invested this month
-    const invested = await pool.query(`
-      SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
-      FROM investment_log
-      WHERE date BETWEEN $1 AND $2
-    `, [start, end]);
+      pool.query(`
+        SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
+        FROM investment_log
+        WHERE date BETWEEN $1 AND $2
+      `, [start, end]),
 
-    // You owe (your share of others' split txns - from Splitwise manual entries)
-    const youOwe = await pool.query(`
-      SELECT COALESCE(SUM(split_amount), 0) as total
-      FROM transactions
-      WHERE type='credit' AND is_split=true AND is_recovered=false
-      AND date BETWEEN $1 AND $2
-    `, [start, end]);
+      pool.query(`
+        SELECT COALESCE(SUM(split_amount), 0) as total
+        FROM transactions
+        WHERE type='credit' AND is_split=true AND is_recovered=false
+        AND date BETWEEN $1 AND $2
+      `, [start, end]),
 
-    // Pending flatmate match (UPI credits needing confirmation)
-    const pendingMatch = await pool.query(`
-      SELECT t.*, f.name as flatmate_name
-      FROM transactions t
-      JOIN flatmates f ON t.description ILIKE '%' || f.upi_id || '%'
-      WHERE t.type='credit' AND t.source='gmail'
-      AND NOT EXISTS (
-        SELECT 1 FROM flatmate_payments fp WHERE fp.transaction_id = t.id AND fp.confirmed=true
-      )
-      AND t.date BETWEEN $1 AND $2
-      LIMIT 1
-    `, [start, end]);
+      pool.query(`
+        SELECT t.*, f.name as flatmate_name
+        FROM transactions t
+        JOIN flatmates f ON t.description ILIKE '%' || f.upi_id || '%'
+        WHERE t.type='credit' AND t.source='gmail'
+        AND NOT EXISTS (
+          SELECT 1 FROM flatmate_payments fp WHERE fp.transaction_id = t.id AND fp.confirmed=true
+        )
+        AND t.date BETWEEN $1 AND $2
+        LIMIT 1
+      `, [start, end]),
 
-    // Category breakdown
-    const categories = await pool.query(`
-      SELECT c.name, c.color,
-             COALESCE(SUM(CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END), 0) as total
-      FROM transactions t
-      JOIN categories c ON t.category_id = c.id
-      WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
-      AND c.name NOT IN ('Investments', 'Salary')
-      GROUP BY c.name, c.color
-      ORDER BY total DESC
-    `, [start, end]);
+      pool.query(`
+        SELECT c.name, c.color,
+               COALESCE(SUM(CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END), 0) as total
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
+        AND c.name NOT IN ('Investments', 'Salary')
+        GROUP BY c.name, c.color
+        ORDER BY total DESC
+      `, [start, end]),
 
-    // Category breakdown last month
-    const categoriesPrev = await pool.query(`
-      SELECT c.name,
-             COALESCE(SUM(CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END), 0) as total
-      FROM transactions t
-      JOIN categories c ON t.category_id = c.id
-      WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
-      AND c.name NOT IN ('Investments', 'Salary')
-      GROUP BY c.name
-    `, [prevStart, prevEnd]);
+      pool.query(`
+        SELECT c.name,
+               COALESCE(SUM(CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END), 0) as total
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
+        AND c.name NOT IN ('Investments', 'Salary')
+        GROUP BY c.name
+      `, [prevStart, prevEnd]),
+
+      pool.query(`
+        SELECT date, COALESCE(SUM(
+          CASE WHEN is_split THEN split_amount ELSE amount END
+        ), 0) as total
+        FROM transactions
+        WHERE type='debit' AND date >= NOW() - INTERVAL '7 days'
+        GROUP BY date ORDER BY date ASC
+      `)
+    ]);
 
     const prevCatMap = {};
     categoriesPrev.rows.forEach(r => { prevCatMap[r.name] = r.total; });
 
-    // Daily spend - last 7 days
-    const daily = await pool.query(`
-      SELECT date, COALESCE(SUM(
-        CASE WHEN is_split THEN split_amount ELSE amount END
-      ), 0) as total
-      FROM transactions
-      WHERE type='debit' AND date >= NOW() - INTERVAL '7 days'
-      GROUP BY date ORDER BY date ASC
-    `);
-
-    // Insight - biggest category change
     let insight = null;
     const cats = categories.rows;
     for (const cat of cats) {

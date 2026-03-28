@@ -10,9 +10,13 @@ function parseAmount(str) {
 
 function parseDate(str) {
   if (!str) return new Date().toISOString().slice(0, 10);
-  // handle dd-mm-yyyy, dd/mm/yyyy, dd MMM yyyy
+  // handle dd-mm-yyyy, dd/mm/yyyy, dd-mm-yy, yyyy-mm-dd, dd MMM yyyy
   const parts = str.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
   if (parts) return `${parts[3]}-${parts[2]}-${parts[1]}`;
+  const partsShort = str.match(/(\d{2})[-/](\d{2})[-/](\d{2})/);
+  if (partsShort) return `20${partsShort[3]}-${partsShort[2]}-${partsShort[1]}`;
+  const isoParts = str.match(/(\d{4})[-/](\d{2})[-/](\d{2})/);
+  if (isoParts) return `${isoParts[1]}-${isoParts[2]}-${isoParts[3]}`;
   const parts2 = str.match(/(\d{2})\s+(\w{3})\s+(\d{4})/);
   if (parts2) {
     const months = { Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
@@ -27,10 +31,10 @@ function parseHDFC(subject, body) {
   const text = `${subject} ${body}`;
 
   // Debit: "Rs.340.00 debited from A/c **4821 on 15-03-26. Info: SWIGGY"
-  const debitMatch = text.match(/(?:Rs\.|INR|₹)\s*([\d,]+\.?\d*)\s+(?:has been\s+)?debited\s+from\s+(?:A\/c\s+)?[*X]+(\d{4})/i);
+  const debitMatch = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:has been\s+)?debited\s+from\s+(?:a\/?c|account)?\s*(?:ending\s+|xx|x{2}|\*{2,})?(\d{4})/i);
   if (debitMatch) {
-    const merchant = text.match(/Info[:\s]+([^\n.]+)/i);
-    const dateMatch = text.match(/on\s+([\d\-\/]+)/i);
+    const merchant = text.match(/(?:Info|towards|at|to)[:\s]+([^\n.]+)/i);
+    const dateMatch = text.match(/on\s+([\d\-\/]+)/i) || text.match(/dated?\s+([\d\-\/]+)/i);
     return {
       amount: parseAmount(debitMatch[1]),
       type: 'debit',
@@ -42,10 +46,10 @@ function parseHDFC(subject, body) {
   }
 
   // Credit: "Rs.85000.00 credited to A/c **4821"
-  const creditMatch = text.match(/(?:Rs\.|INR|₹)\s*([\d,]+\.?\d*)\s+(?:has been\s+)?credited\s+to\s+(?:A\/c\s+)?[*X]+(\d{4})/i);
+  const creditMatch = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:has been\s+)?credited\s+to\s+(?:a\/?c|account)?\s*(?:ending\s+|xx|x{2}|\*{2,})?(\d{4})/i);
   if (creditMatch) {
     const merchant = text.match(/(?:by|from|Info)[:\s]+([^\n.]+)/i);
-    const dateMatch = text.match(/on\s+([\d\-\/]+)/i);
+    const dateMatch = text.match(/on\s+([\d\-\/]+)/i) || text.match(/dated?\s+([\d\-\/]+)/i);
     return {
       amount: parseAmount(creditMatch[1]),
       type: 'credit',
@@ -64,7 +68,7 @@ function parseHDFCCard(subject, body) {
   const text = `${subject} ${body}`;
 
   // "Rs 340 spent on HDFC Bank Credit Card XX4821 at SWIGGY on 2026-03-15"
-  const match = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:spent|debited)\s+on\s+HDFC.*?(?:XX|x{2})(\d{4})\s+at\s+([^\s][^\n]+?)\s+on\s+([\d\-\/\s\w]+)/i);
+  const match = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:spent|debited|used)\s+on\s+HDFC.*?(?:XX|x{2}|\*{2,}|ending\s+)(\d{4}).*?(?:at|towards)\s+([^\s][^\n]+?)\s+on\s+([\d\-\/\s\w]+)/i);
   if (match) {
     return {
       amount: parseAmount(match[1]),
@@ -84,7 +88,7 @@ function parseAxis(subject, body) {
   const text = `${subject} ${body}`;
 
   // "INR 1,299.00 spent on your Axis Bank Credit Card XX1234 at AMAZON on 15-03-2026"
-  const match = text.match(/(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)\s+(?:spent|debited).*?(?:XX|x{2})(\d{4}).*?(?:at|@)\s+([^\s][^\n]+?)\s+on\s+([\d\-\/]+)/i);
+  const match = text.match(/(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)\s+(?:spent|debited|used).*?(?:XX|x{2}|\*{2,}|ending\s+)(\d{4}).*?(?:at|@|towards)\s+([^\s][^\n]+?)\s+on\s+([\d\-\/]+)/i);
   if (match) {
     return {
       amount: parseAmount(match[1]),
@@ -158,7 +162,8 @@ function parseUPI(subject, body) {
   const text = `${subject} ${body}`;
 
   // Sent: "You have sent Rs.340 to merchant@upi"
-  const sentMatch = text.match(/(?:sent|paid|debited)\s+(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:to|towards)\s+([^\s\n]+)/i);
+  const sentMatch = text.match(/(?:sent|paid|debited)\s+(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:to|towards)\s+([^\s\n]+)/i)
+    || text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*).*?\b(?:paid|sent|transferred)\b.*?\bto\b\s+([^\s\n]+)/i);
   if (sentMatch) {
     const dateMatch = text.match(/(?:on|date)[:\s]+([\d\-\/]+)/i);
     return {
@@ -172,7 +177,8 @@ function parseUPI(subject, body) {
   }
 
   // Received: "You have received Rs.6500 from rahul@upi"
-  const receivedMatch = text.match(/(?:received|credited)\s+(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:from)\s+([^\s\n]+)/i);
+  const receivedMatch = text.match(/(?:received|credited)\s+(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:from)\s+([^\s\n]+)/i)
+    || text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*).*?\b(?:received|credited)\b.*?\bfrom\b\s+([^\s\n]+)/i);
   if (receivedMatch) {
     const dateMatch = text.match(/(?:on|date)[:\s]+([\d\-\/]+)/i);
     return {

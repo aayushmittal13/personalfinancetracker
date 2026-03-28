@@ -90,6 +90,61 @@ router.post('/sync', async (req, res) => {
   }
 });
 
+function decodeGmailBody(data) {
+  if (!data) return '';
+
+  try {
+    return Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8');
+  } catch (err) {
+    return '';
+  }
+}
+
+function stripHtml(html) {
+  return (html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function collectParts(part, bucket) {
+  if (!part) return;
+
+  if (part.body?.data) {
+    const decoded = decodeGmailBody(part.body.data);
+    if (decoded) {
+      if (part.mimeType === 'text/html') {
+        bucket.html.push(stripHtml(decoded));
+      } else if (part.mimeType === 'text/plain') {
+        bucket.plain.push(decoded);
+      }
+    }
+  }
+
+  if (Array.isArray(part.parts)) {
+    part.parts.forEach(child => collectParts(child, bucket));
+  }
+}
+
+function extractReadableBody(message) {
+  const bucket = { plain: [], html: [] };
+  collectParts(message?.payload, bucket);
+
+  const text = [...bucket.plain, ...bucket.html, message?.snippet || '']
+    .filter(Boolean)
+    .join('\n')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text;
+}
+
 async function syncGmail() {
   const tokenRow = await pool.query(`SELECT value FROM settings WHERE key='gmail_tokens'`);
   if (!tokenRow.rows.length) throw new Error('Gmail not connected');
@@ -138,19 +193,12 @@ async function syncGmail() {
       const headers = full.data.payload.headers;
       const subject = headers.find(h => h.name === 'Subject')?.value || '';
       const from = headers.find(h => h.name === 'From')?.value || '';
-
-      let body = '';
-      const parts = full.data.payload.parts || [full.data.payload];
-      for (const part of parts) {
-        if (part.mimeType === 'text/plain' && part.body?.data) {
-          body += Buffer.from(part.body.data, 'base64').toString('utf8');
-        }
-      }
+      const body = extractReadableBody(full.data);
 
       console.log('[Gmail Sync] Parsing:', subject, '|', from);
       const parsed = parseEmail(subject, body, from);
       if (!parsed) {
-        console.log('[Gmail Sync] Could not parse:', subject);
+        console.log('[Gmail Sync] Could not parse:', subject, '| preview:', body.slice(0, 180));
         skipped++;
         continue;
       }

@@ -3,7 +3,8 @@ const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+const corsOrigin = process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? false : '*');
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
 const { categoriesRouter, accountsRouter, fixedExpensesRouter, investmentsRouter, flatmatesRouter, settingsRouter } = require('./routes/other');
@@ -23,7 +24,6 @@ app.get('/health', (req, res) => res.json({ ok: true }));
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`Paisa backend running on ${PORT}`));
 
-// Start cron jobs
 // Start cron jobs - wrapped so startup errors don't break the server
 try { require('./jobs/reminder'); } catch(e) { console.error('Reminder job failed to load:', e.message); }
 try { require('./jobs/gmailSync'); } catch(e) { console.error('Gmail sync job failed to load:', e.message); }

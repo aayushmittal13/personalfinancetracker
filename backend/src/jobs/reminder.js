@@ -1,11 +1,15 @@
-// reminder.js - notify if nothing logged today
 const cron = require('node-cron');
 const pool = require('../../db/pool');
+
+function getISTDate() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+}
 
 // Run at 9pm every day IST (3:30pm UTC)
 cron.schedule('30 15 * * *', async () => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const ist = getISTDate();
+    const today = ist.toISOString().slice(0, 10);
     const { rows } = await pool.query(
       `SELECT COUNT(*) as count FROM transactions WHERE date = $1 AND source = 'manual'`,
       [today]

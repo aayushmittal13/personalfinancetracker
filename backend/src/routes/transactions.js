@@ -36,6 +36,12 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { date, description, amount, type, account_id, category_id } = req.body;
+    if (!date || !description || !amount || !type) {
+      return res.status(400).json({ error: 'Date, description, amount, and type are required' });
+    }
+    if (!['debit', 'credit'].includes(type)) {
+      return res.status(400).json({ error: 'Type must be debit or credit' });
+    }
     const { rows } = await pool.query(`
       INSERT INTO transactions (date, description, amount, type, account_id, category_id, source)
       VALUES ($1, $2, $3, $4, $5, $6, 'manual')

@@ -68,6 +68,7 @@ export const api = {
   // Transactions
   transactions: (month) => req('GET', `/api/transactions?month=${month}`),
   addTransaction: (data) => req('POST', '/api/transactions', data),
+  updateTransaction: (id, data) => req('PATCH', `/api/transactions/${id}`, data),
   updateCategory: (id, category_id) => req('PATCH', `/api/transactions/${id}/category`, { category_id }),
   markSplit: (id, data) => req('PATCH', `/api/transactions/${id}/split`, data),
   deleteTransaction: (id) => req('DELETE', `/api/transactions/${id}`),
@@ -89,6 +90,7 @@ export const api = {
   // Investments
   investments: () => req('GET', '/api/investments'),
   investmentLog: (month) => req('GET', `/api/investments/log?month=${month}`),
+  investmentYtd: (year) => req('GET', `/api/investments/ytd?year=${year || new Date().getFullYear()}`),
   addInvestment: (data) => req('POST', '/api/investments', data),
   logInvestment: (data) => req('POST', '/api/investments/log', data),
   deleteInvestment: (id) => req('DELETE', `/api/investments/${id}`),

@@ -47,6 +47,27 @@ router.post('/', async (req, res) => {
   }
 });
 
+// PATCH /api/transactions/:id - update any fields
+router.patch('/:id', async (req, res) => {
+  try {
+    const { description, amount, type, date, category_id, account_id } = req.body;
+    const { rows } = await pool.query(`
+      UPDATE transactions
+      SET description = COALESCE($1, description),
+          amount = COALESCE($2, amount),
+          type = COALESCE($3, type),
+          date = COALESCE($4, date),
+          category_id = $5,
+          account_id = $6
+      WHERE id = $7 RETURNING *
+    `, [description, amount, type, date, category_id, account_id, req.params.id]);
+    if (!rows[0]) return res.status(404).json({ error: 'Transaction not found' });
+    res.json(rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PATCH /api/transactions/:id/category
 router.patch('/:id/category', async (req, res) => {
   try {

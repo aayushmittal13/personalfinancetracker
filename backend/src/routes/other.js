@@ -172,6 +172,20 @@ investmentsRouter.get('/log', async (req, res) => {
   }
 });
 
+investmentsRouter.get('/ytd', async (req, res) => {
+  try {
+    const year = req.query.year || new Date().getFullYear();
+    const { rows } = await pool.query(`
+      SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
+      FROM investment_log
+      WHERE date >= $1 AND date <= $2
+    `, [`${year}-01-01`, `${year}-12-31`]);
+    res.json({ total: parseFloat(rows[0].total), count: parseInt(rows[0].count) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 investmentsRouter.post('/', async (req, res) => {
   try {
     const { name, amount, type, sip_day, account_id, auto_detect } = req.body;

@@ -7,21 +7,25 @@ export default function Investments({ month }) {
   const [investments, setInvestments] = useState([]);
   const [log, setLog] = useState([]);
   const [accounts, setAccounts] = useState([]);
+  const [ytd, setYtd] = useState({ total: 0, count: 0 });
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [selected, setSelected] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [inv, l, a] = await Promise.all([
+      const [inv, l, a, y] = await Promise.all([
         api.investments(),
         api.investmentLog(month),
-        api.accounts()
+        api.accounts(),
+        api.investmentYtd()
       ]);
       setInvestments(inv);
       setLog(l);
       setAccounts(a);
+      setYtd(y);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [month]);
@@ -31,10 +35,9 @@ export default function Investments({ month }) {
   const sips = investments.filter(i => i.type === 'sip');
   const manual = investments.filter(i => i.type === 'manual');
   const totalMonth = log.reduce((s, l) => s + parseFloat(l.amount), 0);
-  const ytd = totalMonth * 3; // rough, replace with real query
 
   const openAdd = (type) => {
-    setForm({ name: '', amount: '', type, sip_day: '', account_id: accounts[0]?.id || '' });
+    setForm({ name: '', amount: '', type, sip_day: '', account_id: '' });
     setModal('add');
   };
 
@@ -49,11 +52,13 @@ export default function Investments({ month }) {
 
   const del = async (id) => {
     if (!window.confirm('Remove this investment?')) return;
-    await api.deleteInvestment(id);
-    load();
+    try {
+      await api.deleteInvestment(id);
+      setSelected(null);
+      load();
+    } catch (e) { alert(e.message); }
   };
 
-  // Check which SIPs are logged this month
   const loggedIds = new Set(log.map(l => l.investment_id));
 
   if (loading) return <div className="loading">Loading...</div>;
@@ -73,8 +78,8 @@ export default function Investments({ month }) {
         </div>
         <div className="inv-sum-block" style={{ borderLeft: '1px solid var(--line)' }}>
           <div className="inv-sum-label">Year to date</div>
-          <div className="inv-sum-amt">₹{fmt(ytd)}</div>
-          <div className="inv-sum-note">Jan – present</div>
+          <div className="inv-sum-amt">₹{fmt(ytd.total)}</div>
+          <div className="inv-sum-note">{ytd.count} items · {new Date().getFullYear()}</div>
         </div>
       </div>
 
@@ -83,7 +88,7 @@ export default function Investments({ month }) {
       {sips.length > 0 ? (
         <div className="block">
           {sips.map(inv => (
-            <div className="block-row" key={inv.id} onClick={() => del(inv.id)}>
+            <div className="block-row" key={inv.id} onClick={() => setSelected(inv)}>
               <div>
                 <div className="row-main">{inv.name}</div>
                 <div className="row-meta">
@@ -109,7 +114,7 @@ export default function Investments({ month }) {
       {manual.length > 0 ? (
         <div className="block">
           {manual.map(inv => (
-            <div className="block-row" key={inv.id} onClick={() => del(inv.id)}>
+            <div className="block-row" key={inv.id} onClick={() => setSelected(inv)}>
               <div>
                 <div className="row-main">{inv.name}</div>
                 <div className="row-meta">Manual entry</div>
@@ -125,6 +130,23 @@ export default function Investments({ month }) {
         <div className="empty" style={{ padding: '16px 20px', textAlign: 'left' }}>No manual investments.</div>
       )}
       <div className="add-row" onClick={() => openAdd('manual')}>+ Add investment</div>
+
+      {/* Detail modal */}
+      {selected && (
+        <div className="modal-overlay open" onClick={e => e.target.className.includes('overlay') && setSelected(null)}>
+          <div className="modal">
+            <div className="modal-title">{selected.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--sub)', marginBottom: 20, lineHeight: 1.6 }}>
+              ₹{fmt(selected.amount)} · {selected.type === 'sip' ? `SIP on ${selected.sip_day || '-'}th` : 'Manual'}
+              {selected.account_name ? ` · ${selected.account_name}` : ''}
+            </div>
+            <div className="modal-btns">
+              <button className="modal-btn danger" onClick={() => del(selected.id)}>Remove</button>
+              <button className="modal-btn" onClick={() => setSelected(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add modal */}
       {modal === 'add' && (

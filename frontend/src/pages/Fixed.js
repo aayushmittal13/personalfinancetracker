@@ -3,6 +3,15 @@ import { api } from '../api/client';
 
 const fmt = (n) => Math.round(n).toLocaleString('en-IN');
 
+const ordinal = (n) => {
+  if (n >= 11 && n <= 13) return n + 'th';
+  const last = n % 10;
+  if (last === 1) return n + 'st';
+  if (last === 2) return n + 'nd';
+  if (last === 3) return n + 'rd';
+  return n + 'th';
+};
+
 export default function Fixed() {
   const [expenses, setExpenses] = useState([]);
   const [investments, setInvestments] = useState([]);
@@ -11,6 +20,7 @@ export default function Fixed() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [selected, setSelected] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,9 +53,13 @@ export default function Fixed() {
       amount: '',
       due_day: '',
       category_id: categories[0]?.id || '',
-      account_id: accounts[0]?.id || ''
+      account_id: ''
     });
     setModal('add');
+  };
+
+  const openDetail = (item, type) => {
+    setSelected({ ...item, itemType: type });
   };
 
   const save = async () => {
@@ -63,20 +77,26 @@ export default function Fixed() {
 
   const delExpense = async (id) => {
     if (!window.confirm('Remove this fixed expense?')) return;
-    await api.deleteFixedExpense(id);
-    load();
+    try {
+      await api.deleteFixedExpense(id);
+      setSelected(null);
+      load();
+    } catch (e) { alert(e.message); }
   };
 
   const delInvestment = async (id) => {
     if (!window.confirm('Remove this investment?')) return;
-    await api.deleteInvestment(id);
-    load();
+    try {
+      await api.deleteInvestment(id);
+      setSelected(null);
+      load();
+    } catch (e) { alert(e.message); }
   };
 
   const statusTag = (dueDay) => {
     if (!dueDay) return <div className="tag ok">entered</div>;
     if (dueDay < today) return <div className="tag ok">detected</div>;
-    return <div className="tag pending">due {dueDay}th</div>;
+    return <div className="tag pending">due {ordinal(dueDay)}</div>;
   };
 
   if (loading) return <div className="loading">Loading...</div>;
@@ -96,11 +116,11 @@ export default function Fixed() {
       {expenses.length > 0 ? (
         <div className="block">
           {expenses.map(e => (
-            <div className="block-row" key={e.id} onClick={() => delExpense(e.id)}>
+            <div className="block-row" key={e.id} onClick={() => openDetail(e, 'expense')}>
               <div>
                 <div className="row-main">{e.name}</div>
                 <div className="row-meta">
-                  {e.due_day ? `${e.due_day}${e.due_day === 1 ? 'st' : e.due_day === 2 ? 'nd' : e.due_day === 3 ? 'rd' : 'th'} every month` : 'No fixed date'}
+                  {e.due_day ? `${ordinal(e.due_day)} every month` : 'No fixed date'}
                   {e.account_name ? ` · ${e.account_name}` : ''}
                 </div>
               </div>
@@ -129,11 +149,11 @@ export default function Fixed() {
       {investments.length > 0 ? (
         <div className="block">
           {investments.map(inv => (
-            <div className="block-row" key={inv.id} onClick={() => delInvestment(inv.id)}>
+            <div className="block-row" key={inv.id} onClick={() => openDetail(inv, 'investment')}>
               <div>
                 <div className="row-main">{inv.name}</div>
                 <div className="row-meta">
-                  {inv.type === 'sip' ? `SIP · ${inv.sip_day ? inv.sip_day + 'th every month' : 'monthly'}` : 'Manual'}
+                  {inv.type === 'sip' ? `SIP · ${inv.sip_day ? ordinal(inv.sip_day) + ' every month' : 'monthly'}` : 'Manual'}
                   {inv.account_name ? ` · ${inv.account_name}` : ''}
                 </div>
               </div>
@@ -150,6 +170,23 @@ export default function Fixed() {
         </div>
       )}
       <div className="add-row" onClick={() => openAdd('investment')}>+ Add investment</div>
+
+      {/* Detail modal */}
+      {selected && (
+        <div className="modal-overlay open" onClick={e => e.target.className.includes('overlay') && setSelected(null)}>
+          <div className="modal">
+            <div className="modal-title">{selected.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--sub)', marginBottom: 20, lineHeight: 1.6 }}>
+              ₹{fmt(selected.amount)} · {selected.due_day || selected.sip_day ? `${ordinal(selected.due_day || selected.sip_day)} every month` : 'No fixed date'}
+              {selected.account_name ? ` · ${selected.account_name}` : ''}
+            </div>
+            <div className="modal-btns">
+              <button className="modal-btn danger" onClick={() => selected.itemType === 'expense' ? delExpense(selected.id) : delInvestment(selected.id)}>Remove</button>
+              <button className="modal-btn" onClick={() => setSelected(null)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add modal */}
       {modal === 'add' && (

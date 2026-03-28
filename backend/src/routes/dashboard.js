@@ -1,16 +1,27 @@
 const router = require('express').Router();
 const pool = require('../../db/pool');
 
+function getMonthRange(month) {
+  const [yearStr, monthStr] = month.split('-');
+  const year = Number(yearStr);
+  const monthIndex = Number(monthStr) - 1;
+  const start = new Date(Date.UTC(year, monthIndex, 1));
+  const end = new Date(Date.UTC(year, monthIndex + 1, 0));
+
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10)
+  };
+}
+
 // GET /api/dashboard?month=2026-03
 router.get('/', async (req, res) => {
   try {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
+    const { start, end } = getMonthRange(month);
     const [year, mon] = month.split('-');
-    const start = `${year}-${mon}-01`;
-    const end = `${year}-${mon}-31`;
-    const prevMonth = new Date(year, parseInt(mon) - 2, 1).toISOString().slice(0, 7);
-    const prevStart = `${prevMonth}-01`;
-    const prevEnd = `${prevMonth}-31`;
+    const prevMonth = new Date(Date.UTC(Number(year), Number(mon) - 2, 1)).toISOString().slice(0, 7);
+    const { start: prevStart, end: prevEnd } = getMonthRange(prevMonth);
 
     // Income this month
     const income = await pool.query(`

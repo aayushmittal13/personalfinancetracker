@@ -106,6 +106,7 @@ export const api = {
   // Gmail
   gmailStatus: () => req('GET', '/api/gmail/status'),
   gmailSync: () => req('POST', '/api/gmail/sync'),
+  gmailDisconnect: () => req('POST', '/api/gmail/disconnect'),
   gmailAuthUrl: () => buildApiUrl('/api/gmail/auth'),
 
   // Settings

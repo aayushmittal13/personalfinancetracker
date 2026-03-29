@@ -31,7 +31,12 @@ router.get('/callback', async (req, res) => {
       INSERT INTO settings (key, value) VALUES ('gmail_tokens', $1)
       ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()
     `, [JSON.stringify(tokens)]);
-    res.send('Gmail connected. You can close this tab.');
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (frontendUrl) {
+      res.redirect(`${frontendUrl}?gmail=connected`);
+    } else {
+      res.send('Gmail connected. You can close this tab and go back to Paisa.');
+    }
   } catch (err) {
     console.error('[Gmail OAuth Error]', err.message);
     res.status(500).send('OAuth failed: ' + err.message);
@@ -87,6 +92,16 @@ router.get('/reset-imports', async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     client.release();
+  }
+});
+
+// POST /api/gmail/disconnect - remove stored tokens
+router.post('/disconnect', async (req, res) => {
+  try {
+    await pool.query(`DELETE FROM settings WHERE key='gmail_tokens'`);
+    res.json({ ok: true, message: 'Gmail disconnected.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

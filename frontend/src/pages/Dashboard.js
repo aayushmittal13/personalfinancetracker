@@ -44,9 +44,61 @@ export default function Dashboard({ month, setMonth }) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Auto-sync when dashboard loads if data is stale (>1 hour since last sync)
+  useEffect(() => {
+    if (gmail.connected && gmail.lastSync && !syncing) {
+      const lastSyncTime = new Date(gmail.lastSync).getTime();
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      if (lastSyncTime < oneHourAgo) {
+        sync();
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gmail.connected, gmail.lastSync]);
+
+  // Auto-sync when user returns to the tab (phone unlock, tab switch)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && gmail.connected && !syncing) {
+        const lastSyncTime = gmail.lastSync ? new Date(gmail.lastSync).getTime() : 0;
+        const thirtyMinAgo = Date.now() - 30 * 60 * 1000;
+        if (lastSyncTime < thirtyMinAgo) {
+          sync();
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gmail.connected, gmail.lastSync, syncing]);
+
+  // Auto-sync after OAuth redirect (URL has ?gmail=connected)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('gmail') === 'connected') {
+      window.history.replaceState({}, '', window.location.pathname);
+      const timer = setTimeout(() => {
+        load().then(() => sync());
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const connectGmail = () => {
     setSyncNotice(null);
     window.location.href = api.gmailAuthUrl();
+  };
+
+  const disconnectGmail = async () => {
+    if (!window.confirm('Disconnect Gmail? You can reconnect anytime.')) return;
+    try {
+      await api.gmailDisconnect();
+      setGmail(disconnectedGmailState);
+      setSyncNotice({ tone: 'info', text: 'Gmail disconnected.' });
+    } catch (e) {
+      setSyncNotice({ tone: 'error', text: e?.message || 'Failed to disconnect' });
+    }
   };
 
   const sync = async () => {
@@ -89,13 +141,20 @@ export default function Dashboard({ month, setMonth }) {
   };
 
   const confirmMatch = async (txn) => {
-    // Find flatmate by name from pending match
-    const flatmates = await api.flatmates();
-    const fm = flatmates.find(f => txn.description.includes(f.upi_id));
-    if (fm) {
-      await api.confirmPayment({ flatmate_id: fm.id, transaction_id: txn.id, month, amount: txn.amount });
+    try {
+      const flatmates = await api.flatmates();
+      const fm = flatmates.find(f => txn.description.includes(f.upi_id));
+      if (fm) {
+        await api.confirmPayment({ flatmate_id: fm.id, transaction_id: txn.id, month, amount: txn.amount });
+      }
+      load(true);
+    } catch (e) {
+      setSyncNotice({ tone: 'error', text: e?.message || 'Failed to confirm payment' });
     }
-    load();
+  };
+
+  const dismissMatch = async () => {
+    load(true);
   };
 
   const monthLabel = () => {
@@ -141,6 +200,9 @@ export default function Dashboard({ month, setMonth }) {
           <div className="sync-status">
             <span className={`sync-dot ${gmail.connected ? '' : 'offline'}`} />
             <span>{gmailLabel}</span>
+            {gmail.connected && (
+              <button onClick={disconnectGmail} style={{ background: 'none', border: 'none', color: 'var(--sub)', cursor: 'pointer', fontSize: 9, textDecoration: 'underline', fontFamily: 'inherit', padding: 0, marginLeft: 2 }}>disconnect</button>
+            )}
           </div>
           <button
             className="sync-btn"
@@ -222,7 +284,7 @@ export default function Dashboard({ month, setMonth }) {
             <button className="mbtn yes" onClick={() => confirmMatch(data.pending_match)}>
               Yes, settle
             </button>
-            <button className="mbtn" onClick={load}>Not this</button>
+            <button className="mbtn" onClick={dismissMatch}>Not this</button>
           </div>
         </div>
       )}

@@ -214,7 +214,18 @@ async function syncGmail() {
     `, [JSON.stringify(merged)]);
   });
 
-  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+  let gmail;
+  try {
+    gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    await gmail.users.getProfile({ userId: 'me' });
+  } catch (err) {
+    if (err.message?.includes('invalid_grant') || err.response?.data?.error === 'invalid_grant') {
+      console.error('[Gmail Sync] Token expired (invalid_grant), clearing stored tokens');
+      await pool.query(`DELETE FROM settings WHERE key='gmail_tokens'`);
+      throw new Error('Gmail session expired. Your Google app is likely in Testing mode, which expires tokens every 7 days. Go to Google Cloud Console → OAuth consent screen → publish the app, then reconnect Gmail.');
+    }
+    throw err;
+  }
 
   // Always look back 30 days
   const lastSync = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000).toString();

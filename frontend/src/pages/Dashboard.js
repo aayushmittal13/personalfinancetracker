@@ -80,15 +80,10 @@ export default function Dashboard({ month, setMonth }) {
     }
     catch (e) {
       const message = e?.message || (typeof e === 'string' ? e : 'Unknown Gmail sync error');
-      if (message.includes('Gmail not connected') || message.includes('not connected')) {
+      if (message.includes('not connected') || message.includes('session expired') || message.includes('invalid_grant')) {
         setGmail({ loading: false, connected: false, hasRefreshToken: false, lastSync: null });
-        setSyncNotice({
-          tone: 'error',
-          text: 'Gmail is not connected yet. Tap connect Gmail, approve access, then run sync again.'
-        });
-      } else {
-        setSyncNotice({ tone: 'error', text: message });
       }
+      setSyncNotice({ tone: 'error', text: message });
     }
     finally { setSyncing(false); }
   };

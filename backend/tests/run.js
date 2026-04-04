@@ -1,9 +1,10 @@
 const assert = require('assert');
 
 const { parseEmail } = require('../src/parsers/emailParsers');
-const { categorize, ruleBasedCategory } = require('../src/parsers/categorizer');
+const { categorize, ruleBasedCategory, merchantKeyFromDescription } = require('../src/parsers/categorizer');
 const { getMonthRange, getPreviousMonth } = require('../src/utils/dateUtils');
 const { buildSyncQuery, getQueryStartEpoch } = require('../src/utils/gmailSyncUtils');
+const { getReviewMetadata } = require('../src/utils/reviewUtils');
 
 const tests = [];
 
@@ -81,6 +82,34 @@ test('builds incremental Gmail sync query with overlap', () => {
 test('rule matching is boundary aware', () => {
   assert.strictEqual(ruleBasedCategory('payment to zerodha') , 'Investments');
   assert.notStrictEqual(ruleBasedCategory('payment to zerodha'), 'House');
+});
+
+test('merchant rules can override generic categorization', async () => {
+  const category = await categorize('VPA sudarshanpatra282-1@okaxis for dinner', 437, 'debit', {
+    merchantRules: [{ pattern: 'sudarshanpatra282 1 okaxis dinner', name: 'Food' }]
+  });
+
+  assert.strictEqual(category, 'Food');
+});
+
+test('merchant key strips noisy payment words', () => {
+  assert.strictEqual(
+    merchantKeyFromDescription('VPA zerodha.iccl3.brk@validhdfc ICCL ZERODHA'),
+    'zerodha.iccl3.brk@validhdfc iccl zerodha'
+  );
+});
+
+test('gmail imports default to pending review', () => {
+  const review = getReviewMetadata({
+    source: 'gmail',
+    categoryName: 'Food',
+    accountId: 3,
+    parsed: { description: 'swiggy', date: '2026-04-04' }
+  });
+
+  assert.strictEqual(review.status, 'pending');
+  assert.strictEqual(review.reason, 'Gmail import pending confirmation');
+  assert(review.confidence >= 0.9);
 });
 
 test('does not parse generic non-transaction marketing text as UPI', () => {

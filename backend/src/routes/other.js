@@ -2,6 +2,7 @@
 const categoriesRouter = require('express').Router();
 const pool = require('../../db/pool');
 const { getMonthRange } = require('../utils/dateUtils');
+const { confirmedTransactionClause } = require('../utils/sql');
 
 categoriesRouter.get('/', async (req, res) => {
   try {
@@ -180,6 +181,7 @@ investmentsRouter.get('/log', async (req, res) => {
         FROM transactions t
         JOIN categories c ON t.category_id = c.id
         WHERE t.type='debit'
+        AND ${confirmedTransactionClause('t')}
         AND c.name='Investments'
         AND t.date BETWEEN $1 AND $2
       ) combined_investments
@@ -207,6 +209,7 @@ investmentsRouter.get('/ytd', async (req, res) => {
         FROM transactions t
         JOIN categories c ON t.category_id = c.id
         WHERE t.type='debit'
+        AND ${confirmedTransactionClause('t')}
         AND c.name='Investments'
         AND t.date >= $1 AND t.date <= $2
       ) invested_rows

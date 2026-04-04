@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const pool = require('../../db/pool');
 const { getMonthRange, getPreviousMonth } = require('../utils/dateUtils');
+const { confirmedTransactionClause } = require('../utils/sql');
 
 // GET /api/dashboard?month=2026-03
 router.get('/', async (req, res) => {
@@ -10,11 +11,12 @@ router.get('/', async (req, res) => {
     const prevMonth = getPreviousMonth(month);
     const { start: prevStart, end: prevEnd } = getMonthRange(prevMonth);
 
-    const [income, spent, spentPrev, toRecover, invested, youOwe, pendingMatch, categories, categoriesPrev, daily] = await Promise.all([
+    const [income, spent, spentPrev, toRecover, invested, youOwe, pendingMatch, categories, categoriesPrev, daily, reviewQueue] = await Promise.all([
       pool.query(`
         SELECT COALESCE(SUM(amount), 0) as total
         FROM transactions
         WHERE type='credit' AND date BETWEEN $1 AND $2
+        AND review_status='confirmed'
         AND category_id = (SELECT id FROM categories WHERE name='Salary' LIMIT 1)
       `, [start, end]),
 
@@ -25,6 +27,7 @@ router.get('/', async (req, res) => {
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
         WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
+        AND ${confirmedTransactionClause('t')}
         AND (c.name IS NULL OR c.name NOT IN ('Investments'))
       `, [start, end]),
 
@@ -35,6 +38,7 @@ router.get('/', async (req, res) => {
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
         WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
+        AND ${confirmedTransactionClause('t')}
         AND (c.name IS NULL OR c.name NOT IN ('Investments'))
       `, [prevStart, prevEnd]),
 
@@ -43,6 +47,7 @@ router.get('/', async (req, res) => {
                COUNT(DISTINCT id) as count
         FROM transactions
         WHERE is_split=true AND is_recovered=false
+        AND review_status='confirmed'
         AND date BETWEEN $1 AND $2
       `, [start, end]),
 
@@ -59,6 +64,7 @@ router.get('/', async (req, res) => {
           FROM transactions t
           JOIN categories c ON t.category_id = c.id
           WHERE t.type='debit'
+          AND ${confirmedTransactionClause('t')}
           AND c.name='Investments'
           AND t.date BETWEEN $1 AND $2
         ) invested_rows
@@ -68,6 +74,7 @@ router.get('/', async (req, res) => {
         SELECT COALESCE(SUM(split_amount), 0) as total
         FROM transactions
         WHERE type='credit' AND is_split=true AND is_recovered=false
+        AND review_status='confirmed'
         AND date BETWEEN $1 AND $2
       `, [start, end]),
 
@@ -76,6 +83,7 @@ router.get('/', async (req, res) => {
         FROM transactions t
         JOIN flatmates f ON t.description ILIKE '%' || f.upi_id || '%'
         WHERE t.type='credit' AND t.source='gmail'
+        AND ${confirmedTransactionClause('t')}
         AND NOT EXISTS (
           SELECT 1 FROM flatmate_payments fp WHERE fp.transaction_id = t.id AND fp.confirmed=true
         )
@@ -89,6 +97,7 @@ router.get('/', async (req, res) => {
         FROM transactions t
         JOIN categories c ON t.category_id = c.id
         WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
+        AND ${confirmedTransactionClause('t')}
         AND c.name NOT IN ('Investments', 'Salary')
         GROUP BY c.name, c.color
         ORDER BY total DESC
@@ -100,6 +109,7 @@ router.get('/', async (req, res) => {
         FROM transactions t
         JOIN categories c ON t.category_id = c.id
         WHERE t.type='debit' AND t.date BETWEEN $1 AND $2
+        AND ${confirmedTransactionClause('t')}
         AND c.name NOT IN ('Investments', 'Salary')
         GROUP BY c.name
       `, [prevStart, prevEnd]),
@@ -110,7 +120,14 @@ router.get('/', async (req, res) => {
         ), 0) as total
         FROM transactions
         WHERE type='debit' AND date >= NOW() - INTERVAL '7 days'
+        AND review_status='confirmed'
         GROUP BY date ORDER BY date ASC
+      `),
+
+      pool.query(`
+        SELECT COUNT(*)::int as count
+        FROM transactions
+        WHERE review_status='pending'
       `)
     ]);
 
@@ -150,6 +167,7 @@ router.get('/', async (req, res) => {
       })),
       daily: daily.rows,
       pending_match: pendingMatch.rows[0] || null,
+      pending_review_count: reviewQueue.rows[0]?.count || 0,
       insight
     });
   } catch (err) {

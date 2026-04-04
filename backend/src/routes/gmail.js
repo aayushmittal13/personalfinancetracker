@@ -5,6 +5,7 @@ const { parseEmail } = require('../parsers/emailParsers');
 const { categorize } = require('../parsers/categorizer');
 const { buildSyncQuery } = require('../utils/gmailSyncUtils');
 const { toIsoDateFromEpochMs } = require('../utils/dateUtils');
+const { getReviewMetadata } = require('../utils/reviewUtils');
 
 const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 const REPORT_SAMPLE_LIMIT = 5;
@@ -331,6 +332,12 @@ async function syncGmail(source = 'cron') {
         const categoryName = await categorize(parsed.description, parsed.amount, parsed.type);
         const categoryRow = await pool.query(`SELECT id FROM categories WHERE name=$1`, [categoryName]);
         const category_id = categoryRow.rows[0]?.id || null;
+        const review = getReviewMetadata({
+          source: 'gmail',
+          categoryName,
+          accountId: account_id,
+          parsed
+        });
 
         if (!category_id || categoryName === 'Others') {
           report.uncategorized++;
@@ -345,9 +352,24 @@ async function syncGmail(source = 'cron') {
         }
 
         await pool.query(`
-          INSERT INTO transactions (date, description, amount, type, account_id, category_id, gmail_message_id, source, raw_text)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, 'gmail', $8)
-        `, [parsed.date, parsed.description, parsed.amount, parsed.type, account_id, category_id, msg.id, body.slice(0, 500)]);
+          INSERT INTO transactions (
+            date, description, amount, type, account_id, category_id, gmail_message_id,
+            source, raw_text, review_status, review_reason, parse_confidence
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, 'gmail', $8, $9, $10, $11)
+        `, [
+          parsed.date,
+          parsed.description,
+          parsed.amount,
+          parsed.type,
+          account_id,
+          category_id,
+          msg.id,
+          body.slice(0, 500),
+          review.status,
+          review.reason,
+          review.confidence
+        ]);
 
         report.imported++;
       } catch (err) {

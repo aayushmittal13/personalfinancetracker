@@ -67,8 +67,10 @@ export const api = {
 
   // Transactions
   transactions: (month) => req('GET', `/api/transactions?month=${month}`),
+  pendingTransactions: () => req('GET', '/api/transactions/review'),
   addTransaction: (data) => req('POST', '/api/transactions', data),
   updateTransaction: (id, data) => req('PATCH', `/api/transactions/${id}`, data),
+  reviewTransaction: (id, data) => req('PATCH', `/api/transactions/${id}/review`, data),
   updateCategory: (id, category_id) => req('PATCH', `/api/transactions/${id}/category`, { category_id }),
   markSplit: (id, data) => req('PATCH', `/api/transactions/${id}/split`, data),
   deleteTransaction: (id) => req('DELETE', `/api/transactions/${id}`),

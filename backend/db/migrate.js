@@ -64,7 +64,54 @@ async function migrate() {
         gmail_message_id TEXT UNIQUE,
         source TEXT NOT NULL CHECK (source IN ('gmail', 'manual')),
         raw_text TEXT,
+        review_status TEXT NOT NULL DEFAULT 'confirmed' CHECK (review_status IN ('pending', 'confirmed')),
+        review_reason TEXT,
+        parse_confidence NUMERIC(4,2),
+        reviewed_at TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+
+    await client.query(`
+      ALTER TABLE transactions
+      ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'confirmed'
+    `);
+    await client.query(`
+      ALTER TABLE transactions
+      ADD COLUMN IF NOT EXISTS review_reason TEXT
+    `);
+    await client.query(`
+      ALTER TABLE transactions
+      ADD COLUMN IF NOT EXISTS parse_confidence NUMERIC(4,2)
+    `);
+    await client.query(`
+      ALTER TABLE transactions
+      ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ
+    `);
+    await client.query(`
+      UPDATE transactions
+      SET review_status = 'confirmed'
+      WHERE review_status IS NULL
+    `);
+    await client.query(`
+      ALTER TABLE transactions
+      DROP CONSTRAINT IF EXISTS transactions_review_status_check
+    `);
+    await client.query(`
+      ALTER TABLE transactions
+      ADD CONSTRAINT transactions_review_status_check
+      CHECK (review_status IN ('pending', 'confirmed'))
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS merchant_rules (
+        id SERIAL PRIMARY KEY,
+        pattern TEXT NOT NULL UNIQUE,
+        category_id INTEGER NOT NULL REFERENCES categories(id),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        hit_count INTEGER NOT NULL DEFAULT 0,
+        last_used_at TIMESTAMPTZ
       )
     `);
 

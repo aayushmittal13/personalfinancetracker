@@ -9,8 +9,21 @@ const EMOJIS = {
   Salary: '💰', Health: '🏥', Others: '💸'
 };
 
+function emptyForm(categories) {
+  return {
+    date: new Date().toISOString().slice(0, 10),
+    type: 'debit',
+    description: '',
+    amount: '',
+    category_id: categories[0]?.id || '',
+    account_id: '',
+    learn_rule: true
+  };
+}
+
 export default function Transactions({ month }) {
   const [txns, setTxns] = useState([]);
+  const [pendingTxns, setPendingTxns] = useState([]);
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,12 +34,14 @@ export default function Transactions({ month }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, c, a] = await Promise.all([
+      const [t, p, c, a] = await Promise.all([
         api.transactions(month),
+        api.pendingTransactions(),
         api.categories(),
         api.accounts()
       ]);
       setTxns(t);
+      setPendingTxns(p);
       setCategories(c);
       setAccounts(a);
     } catch (e) { console.error(e); }
@@ -35,12 +50,18 @@ export default function Transactions({ month }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const filtered = search
-    ? txns.filter(t =>
-        t.description.toLowerCase().includes(search.toLowerCase()) ||
-        (t.category_name || '').toLowerCase().includes(search.toLowerCase())
-      )
-    : txns;
+  const matchesSearch = useCallback((txn) => {
+    if (!search) return true;
+    const query = search.toLowerCase();
+    return (
+      txn.description.toLowerCase().includes(query) ||
+      (txn.category_name || '').toLowerCase().includes(query) ||
+      (txn.review_reason || '').toLowerCase().includes(query)
+    );
+  }, [search]);
+
+  const filteredPending = pendingTxns.filter(matchesSearch);
+  const filtered = txns.filter(matchesSearch);
 
   const grouped = filtered.reduce((acc, t) => {
     const key = t.date;
@@ -62,34 +83,33 @@ export default function Transactions({ month }) {
   };
 
   const openAdd = () => {
-    setForm({
-      date: new Date().toISOString().slice(0, 10),
-      type: 'debit',
-      description: '',
-      amount: '',
-      category_id: categories[0]?.id || '',
-      account_id: ''
-    });
-    setModal('add');
+    setForm(emptyForm(categories));
+    setModal({ mode: 'add' });
   };
 
-  const openEdit = (txn) => {
+  const openEdit = (txn, mode = 'edit') => {
     setForm({
       description: txn.description,
       amount: txn.amount,
       type: txn.type,
-      date: txn.date,
+      date: String(txn.date).slice(0, 10),
       category_id: txn.category_id || '',
-      account_id: txn.account_id || ''
+      account_id: txn.account_id || '',
+      learn_rule: true
     });
-    setModal({ txn });
+    setModal({ mode, txn });
+  };
+
+  const closeModal = () => {
+    setModal(null);
+    setForm({});
   };
 
   const saveAdd = async () => {
     if (!form.description || !form.amount) return;
     try {
       await api.addTransaction(form);
-      setModal(null);
+      closeModal();
       load();
     } catch (e) { alert(e.message); }
   };
@@ -97,16 +117,28 @@ export default function Transactions({ month }) {
   const saveEdit = async () => {
     try {
       await api.updateTransaction(modal.txn.id, form);
-      setModal(null);
+      closeModal();
       load();
     } catch (e) { alert(e.message); }
   };
 
-  const deleteTxn = async (id) => {
-    if (!window.confirm('Delete this transaction?')) return;
+  const confirmReview = async () => {
+    if (!form.category_id) {
+      alert('Pick a category before confirming.');
+      return;
+    }
+    try {
+      await api.reviewTransaction(modal.txn.id, form);
+      closeModal();
+      load();
+    } catch (e) { alert(e.message); }
+  };
+
+  const deleteTxn = async (id, copy = 'Delete this transaction?') => {
+    if (!window.confirm(copy)) return;
     try {
       await api.deleteTransaction(id);
-      setModal(null);
+      closeModal();
       load();
     } catch (e) { alert(e.message); }
   };
@@ -133,7 +165,36 @@ export default function Transactions({ month }) {
         + Add transaction
       </button>
 
-      {Object.keys(grouped).length === 0 && (
+      {filteredPending.length > 0 && (
+        <>
+          <div className="section-header">
+            <div className="sh" style={{ padding: 0, marginBottom: 0 }}>Needs review</div>
+            <div className="review-count">{filteredPending.length}</div>
+          </div>
+          <div className="review-list">
+            {filteredPending.map(txn => (
+              <button className="review-card" key={txn.id} onClick={() => openEdit(txn, 'review')}>
+                <div className="review-card-top">
+                  <div className="review-card-title">{txn.description}</div>
+                  <div className={`row-amt ${txn.type === 'credit' ? 'cr' : ''}`}>
+                    {txn.type === 'credit' ? '+' : ''}₹{fmt(txn.amount)}
+                  </div>
+                </div>
+                <div className="review-card-meta">
+                  <span>{dateLabel(txn.date)}</span>
+                  <span>{txn.account_name || 'No account matched'}</span>
+                </div>
+                <div className="review-card-tags">
+                  <span className="tag pending">{txn.review_reason || 'Pending review'}</span>
+                  <span className="tag confirm">{txn.category_name || 'Pick category'}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+
+      {Object.keys(grouped).length === 0 && filteredPending.length === 0 && (
         <div className="empty">
           {search ? 'No matching transactions.' : 'No transactions this month.'}<br />
           {!search && 'Add one or sync Gmail.'}
@@ -145,7 +206,7 @@ export default function Transactions({ month }) {
           <div className="txn-date-label">{dateLabel(date)}</div>
           <div className="block">
             {grouped[date].map(txn => (
-              <div className="block-row" key={txn.id} onClick={() => openEdit(txn)}>
+              <div className="block-row" key={txn.id} onClick={() => openEdit(txn, 'edit')}>
                 <div className="row-left">
                   <div style={{ fontSize: 18, width: 26, textAlign: 'center', flexShrink: 0 }}>
                     {EMOJIS[txn.category_name] || '💸'}
@@ -154,7 +215,7 @@ export default function Transactions({ month }) {
                     <div className="row-main">{txn.description}</div>
                     <div className="row-meta">
                       {txn.category_name || 'Uncategorized'} · {txn.account_name || txn.source}
-                      {txn.source === 'gmail' && ' · auto'}
+                      {txn.source === 'gmail' && ' · reviewed'}
                     </div>
                   </div>
                 </div>
@@ -163,7 +224,6 @@ export default function Transactions({ month }) {
                     {txn.type === 'credit' ? '+' : ''}₹{fmt(txn.amount)}
                   </div>
                   {txn.is_split && <div className="tag split">split</div>}
-                  {!txn.category_id && <div className="tag confirm">categorize?</div>}
                 </div>
               </div>
             ))}
@@ -171,77 +231,18 @@ export default function Transactions({ month }) {
         </div>
       ))}
 
-      {/* Add modal */}
-      {modal === 'add' && (
-        <div className="modal-overlay open" onClick={e => e.target.className.includes('overlay') && setModal(null)}>
+      {modal && (
+        <div className="modal-overlay open" onClick={e => e.target.className.includes('overlay') && closeModal()}>
           <div className="modal">
-            <div className="modal-title">Add transaction</div>
-
-            <div className="modal-field">
-              <div className="modal-label">Type</div>
-              <div className="type-toggle">
-                <button className={`type-btn ${form.type === 'debit' ? 'active' : ''}`}
-                  onClick={() => setForm(f => ({ ...f, type: 'debit' }))}>Expense</button>
-                <button className={`type-btn ${form.type === 'credit' ? 'active' : ''}`}
-                  onClick={() => setForm(f => ({ ...f, type: 'credit' }))}>Income</button>
-              </div>
+            <div className="modal-title">
+              {modal.mode === 'add' ? 'Add transaction' : modal.mode === 'review' ? 'Review transaction' : 'Edit transaction'}
             </div>
 
-            <div className="modal-field">
-              <div className="modal-label">Description</div>
-              <input className="modal-input" placeholder="e.g. Swiggy, Uber, Salary"
-                value={form.description}
-                onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-            </div>
-
-            <div className="modal-field">
-              <div className="modal-label">Amount (₹)</div>
-              <input className="modal-input" type="number" placeholder="0"
-                value={form.amount}
-                onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
-            </div>
-
-            <div className="modal-field">
-              <div className="modal-label">Date</div>
-              <input className="modal-input" type="date"
-                value={form.date}
-                onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
-            </div>
-
-            <div className="modal-field">
-              <div className="modal-label">Category</div>
-              <select className="modal-select"
-                value={form.category_id}
-                onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </div>
-
-            {accounts.length > 0 && (
-              <div className="modal-field">
-                <div className="modal-label">Account</div>
-                <select className="modal-select"
-                  value={form.account_id}
-                  onChange={e => setForm(f => ({ ...f, account_id: e.target.value }))}>
-                  <option value="">No account</option>
-                  {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
+            {modal.mode === 'review' && (
+              <div className="review-help">
+                Confirm the category and details before this import counts toward your totals.
               </div>
             )}
-
-            <div className="modal-btns">
-              <button className="modal-btn" onClick={() => setModal(null)}>Cancel</button>
-              <button className="modal-btn save" onClick={saveAdd}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit modal */}
-      {modal?.txn && (
-        <div className="modal-overlay open" onClick={e => e.target.className.includes('overlay') && setModal(null)}>
-          <div className="modal">
-            <div className="modal-title">Edit transaction</div>
 
             <div className="modal-field">
               <div className="modal-label">Type</div>
@@ -256,21 +257,22 @@ export default function Transactions({ month }) {
             <div className="modal-field">
               <div className="modal-label">Description</div>
               <input className="modal-input"
-                value={form.description}
+                placeholder="e.g. Swiggy, Uber, Salary"
+                value={form.description || ''}
                 onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
             </div>
 
             <div className="modal-field">
               <div className="modal-label">Amount (₹)</div>
               <input className="modal-input" type="number"
-                value={form.amount}
+                value={form.amount || ''}
                 onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
             </div>
 
             <div className="modal-field">
               <div className="modal-label">Date</div>
               <input className="modal-input" type="date"
-                value={form.date}
+                value={form.date || ''}
                 onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
 
@@ -296,9 +298,38 @@ export default function Transactions({ month }) {
               </div>
             )}
 
+            {modal.mode === 'review' && (
+              <label className="modal-check">
+                <input
+                  type="checkbox"
+                  checked={!!form.learn_rule}
+                  onChange={e => setForm(f => ({ ...f, learn_rule: e.target.checked }))}
+                />
+                <span>Remember this merchant for future auto-categorization</span>
+              </label>
+            )}
+
             <div className="modal-btns">
-              <button className="modal-btn danger" onClick={() => deleteTxn(modal.txn.id)}>Delete</button>
-              <button className="modal-btn save" onClick={saveEdit}>Save</button>
+              {modal.mode === 'add' && (
+                <>
+                  <button className="modal-btn" onClick={closeModal}>Cancel</button>
+                  <button className="modal-btn save" onClick={saveAdd}>Save</button>
+                </>
+              )}
+
+              {modal.mode === 'edit' && (
+                <>
+                  <button className="modal-btn danger" onClick={() => deleteTxn(modal.txn.id)}>Delete</button>
+                  <button className="modal-btn save" onClick={saveEdit}>Save</button>
+                </>
+              )}
+
+              {modal.mode === 'review' && (
+                <>
+                  <button className="modal-btn danger" onClick={() => deleteTxn(modal.txn.id, 'Discard this imported transaction?')}>Discard</button>
+                  <button className="modal-btn save" onClick={confirmReview}>Confirm</button>
+                </>
+              )}
             </div>
           </div>
         </div>

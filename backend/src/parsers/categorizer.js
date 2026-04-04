@@ -140,7 +140,76 @@ function ruleBasedCategory(description) {
   return bestCategory;
 }
 
-async function categorize(description, amount, type) {
+function merchantKeyFromDescription(description) {
+  const stopwords = new Set([
+    'vpa', 'upi', 'to', 'from', 'via', 'by', 'at', 'for', 'paid', 'sent',
+    'received', 'debited', 'credited', 'txn', 'transaction', 'ref', 'reference',
+    'number', 'bank', 'account', 'a', 'c', 'imps', 'neft', 'rtgs', 'card'
+  ]);
+
+  const tokens = normalizeText(description)
+    .split(' ')
+    .filter(Boolean)
+    .filter(token => !stopwords.has(token))
+    .filter(token => token.length >= 3)
+    .filter(token => /[a-z]/.test(token));
+
+  const uniqueTokens = [];
+  for (const token of tokens) {
+    if (!uniqueTokens.includes(token)) uniqueTokens.push(token);
+  }
+
+  return uniqueTokens.slice(0, 6).join(' ').trim();
+}
+
+function findBestMerchantRule(text, rules) {
+  const key = merchantKeyFromDescription(text);
+  if (!key) return null;
+
+  let bestRule = null;
+  let bestLength = 0;
+
+  for (const rule of rules) {
+    if (!rule?.pattern || !rule?.name) continue;
+    if (key.includes(rule.pattern) || rule.pattern.includes(key)) {
+      if (rule.pattern.length > bestLength) {
+        bestRule = rule;
+        bestLength = rule.pattern.length;
+      }
+    }
+  }
+
+  return bestRule?.name || null;
+}
+
+async function getMerchantRuleCategory(description, options = {}) {
+  const key = merchantKeyFromDescription(description);
+  if (!key) return null;
+
+  if (Array.isArray(options.merchantRules)) {
+    return findBestMerchantRule(key, options.merchantRules);
+  }
+
+  if (!process.env.DATABASE_URL) return null;
+
+  try {
+    const pool = require('../../db/pool');
+    const { rows } = await pool.query(`
+      SELECT mr.pattern, c.name
+      FROM merchant_rules mr
+      JOIN categories c ON mr.category_id = c.id
+      ORDER BY LENGTH(mr.pattern) DESC, mr.updated_at DESC
+    `);
+    return findBestMerchantRule(key, rows);
+  } catch (err) {
+    return null;
+  }
+}
+
+async function categorize(description, amount, type, options = {}) {
+  const merchantRuleCategory = await getMerchantRuleCategory(description, options);
+  if (merchantRuleCategory) return merchantRuleCategory;
+
   const ruleResult = ruleBasedCategory(description);
   if (ruleResult) return ruleResult;
 
@@ -151,6 +220,7 @@ async function categorize(description, amount, type) {
 module.exports = {
   RULES,
   normalizeText,
+  merchantKeyFromDescription,
   ruleBasedCategory,
   categorize
 };

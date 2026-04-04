@@ -5,7 +5,7 @@ const syncGmail = gmailRouter.syncGmail;
 // Sync every 4 hours
 cron.schedule('0 */4 * * *', async () => {
   try {
-    const result = await syncGmail();
+    const result = await syncGmail('cron');
     console.log(`[Gmail Sync] imported=${result.imported} skipped=${result.skipped}`);
   } catch (err) {
     // Gmail not connected yet - that's fine

@@ -4,12 +4,20 @@ import { api } from '../api/client';
 const fmt = (n) => Math.round(n).toLocaleString('en-IN');
 const emptyGmailState = { loading: true, connected: false, hasRefreshToken: false, lastSync: null };
 const disconnectedGmailState = { loading: false, connected: false, hasRefreshToken: false, lastSync: null };
+const formatSyncTime = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? ''
+    : date.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+};
 
 export default function Dashboard({ month, setMonth }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [gmail, setGmail] = useState(emptyGmailState);
+  const [syncReport, setSyncReport] = useState(null);
   const [syncNotice, setSyncNotice] = useState(null);
   const [loadError, setLoadError] = useState(null);
 
@@ -18,9 +26,10 @@ export default function Dashboard({ month, setMonth }) {
     setGmail(prev => ({ ...prev, loading: !background }));
     setLoadError(null);
     try {
-      const [dashboardResult, gmailResult] = await Promise.allSettled([
+      const [dashboardResult, gmailResult, reportResult] = await Promise.allSettled([
         api.dashboard(month),
-        api.gmailStatus()
+        api.gmailStatus(),
+        api.gmailReport()
       ]);
 
       if (dashboardResult.status === 'fulfilled') {
@@ -36,6 +45,13 @@ export default function Dashboard({ month, setMonth }) {
       } else {
         console.error(gmailResult.reason);
         setGmail(disconnectedGmailState);
+      }
+
+      if (reportResult.status === 'fulfilled') {
+        setSyncReport(reportResult.value);
+      } else {
+        console.error(reportResult.reason);
+        setSyncReport(null);
       }
     }
     catch (e) { console.error(e); }
@@ -59,6 +75,7 @@ export default function Dashboard({ month, setMonth }) {
     setSyncNotice(null);
     try {
       const result = await api.gmailSync();
+      setSyncReport(result.report || null);
       await load(true);
 
       if (result.imported > 0) {
@@ -69,7 +86,7 @@ export default function Dashboard({ month, setMonth }) {
       } else if (result.total === 0) {
         setSyncNotice({
           tone: 'info',
-          text: 'Sync ran, but no matching bank emails were found in the last 30 days.'
+          text: 'Sync ran, but no matching bank emails were found in the recent sync window.'
         });
       } else {
         setSyncNotice({
@@ -85,6 +102,11 @@ export default function Dashboard({ month, setMonth }) {
         setSyncNotice({
           tone: 'error',
           text: 'Gmail is not connected yet. Tap connect Gmail, approve access, then run sync again.'
+        });
+      } else if (message.includes('invalid_grant')) {
+        setSyncNotice({
+          tone: 'error',
+          text: 'Google rejected the saved Gmail token. Reconnect Gmail, then run sync again.'
         });
       } else {
         setSyncNotice({ tone: 'error', text: message });
@@ -129,9 +151,7 @@ export default function Dashboard({ month, setMonth }) {
   const gmailLabel = gmail.loading
     ? 'checking Gmail...'
     : gmail.connected
-      ? (gmail.lastSync
-          ? `last sync ${new Date(gmail.lastSync).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}`
-          : 'Gmail connected')
+      ? (gmail.lastSync ? `last sync ${formatSyncTime(gmail.lastSync)}` : 'Gmail connected')
       : 'Gmail not connected';
 
   return (
@@ -173,6 +193,10 @@ export default function Dashboard({ month, setMonth }) {
         <div className={`sync-note ${syncNotice.tone}`}>
           {syncNotice.text}
         </div>
+      )}
+
+      {syncReport && (
+        <SyncReportCard report={syncReport} />
       )}
 
       {!hasToday && (
@@ -335,5 +359,61 @@ function HouseSection({ month }) {
         })}
       </div>
     </>
+  );
+}
+
+function SyncReportCard({ report }) {
+  const metrics = [
+    { label: 'Imported', value: report.imported || 0 },
+    { label: 'Already imported', value: report.skipped_existing || 0 },
+    { label: 'Parse misses', value: report.skipped_unparsed || 0 },
+    { label: 'Import errors', value: report.failed || 0 },
+    { label: 'Uncategorized', value: report.uncategorized || 0 },
+    { label: 'Unknown account', value: report.unmatched_account || 0 }
+  ];
+
+  const sampleGroups = [
+    { label: 'Parse misses', items: report.parse_failures, render: (item) => `${item.subject} · ${item.preview}` },
+    { label: 'Import errors', items: report.import_failures, render: (item) => `${item.subject} · ${item.reason}` },
+    { label: 'Uncategorized', items: report.uncategorized_samples, render: (item) => `${item.description} · ₹${fmt(item.amount || 0)}` },
+    { label: 'Unknown account', items: report.unmatched_account_samples, render: (item) => `${item.description} · ${item.account_last4 || 'no account match'}` }
+  ].filter(group => Array.isArray(group.items) && group.items.length > 0);
+
+  return (
+    <div className="sync-report">
+      <div className="sync-report-head">
+        <div>
+          <div className="sync-report-title">Last sync report</div>
+          <div className="sync-report-sub">
+            {report.status || 'completed'} · scanned {report.total_messages || 0} emails
+            {report.completed_at ? ` · ${formatSyncTime(report.completed_at)}` : ''}
+          </div>
+        </div>
+      </div>
+
+      <div className="sync-report-grid">
+        {metrics.map(metric => (
+          <div className="sync-report-metric" key={metric.label}>
+            <div className="sync-report-value">{metric.value}</div>
+            <div className="sync-report-label">{metric.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {report.error && (
+        <div className="sync-report-error">{report.error}</div>
+      )}
+
+      {sampleGroups.map(group => (
+        <div className="sync-report-group" key={group.label}>
+          <div className="sync-report-group-title">{group.label}</div>
+          {group.items.map((item, index) => (
+            <div className="sync-report-item" key={`${group.label}-${index}`}>
+              {group.render(item)}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
   );
 }

@@ -100,6 +100,84 @@ html, body {
   color: var(--red);
 }
 
+.sync-report {
+  margin: 0 20px 20px;
+  padding: 15px;
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.sync-report-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.sync-report-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--sub);
+  margin-bottom: 4px;
+}
+.sync-report-sub {
+  font-size: 11px;
+  color: var(--sub);
+  line-height: 1.4;
+}
+.sync-report-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.sync-report-metric {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--bg);
+}
+.sync-report-value {
+  font-family: 'Fraunces', serif;
+  font-size: 18px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.sync-report-label {
+  font-size: 10px;
+  color: var(--sub);
+}
+.sync-report-error {
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px solid #e7bbbb;
+  border-radius: 10px;
+  background: #fff5f5;
+  color: var(--red);
+  font-size: 11px;
+}
+.sync-report-group + .sync-report-group {
+  margin-top: 12px;
+}
+.sync-report-group-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--sub);
+  margin-bottom: 6px;
+}
+.sync-report-item {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.sync-report-item:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
 /* nudge */
 .nudge {
   margin: 0 20px 20px;

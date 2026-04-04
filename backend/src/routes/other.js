@@ -1,6 +1,7 @@
 // categories.js
 const categoriesRouter = require('express').Router();
 const pool = require('../../db/pool');
+const { getMonthRange } = require('../utils/dateUtils');
 
 categoriesRouter.get('/', async (req, res) => {
   try {
@@ -147,24 +148,42 @@ investmentsRouter.get('/', async (req, res) => {
 
 investmentsRouter.get('/log', async (req, res) => {
   try {
-    const { month } = req.query;
-    let start, end;
-    if (month) {
-      const [y, m] = month.split('-');
-      const lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
-      start = `${month}-01`;
-      end = `${month}-${String(lastDay).padStart(2, '0')}`;
-    } else {
-      const now = new Date();
-      start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-      end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
-    }
+    const currentMonth = req.query.month || new Date().toISOString().slice(0, 7);
+    const { start, end } = getMonthRange(currentMonth);
     const { rows } = await pool.query(`
-      SELECT il.*, i.name, i.type
-      FROM investment_log il
-      JOIN investments i ON il.investment_id = i.id
-      WHERE il.date BETWEEN $1 AND $2
-      ORDER BY il.date DESC
+      SELECT *
+      FROM (
+        SELECT il.id,
+               il.investment_id,
+               il.amount,
+               il.date,
+               il.source,
+               il.gmail_message_id,
+               il.created_at,
+               i.name,
+               i.type
+        FROM investment_log il
+        JOIN investments i ON il.investment_id = i.id
+        WHERE il.date BETWEEN $1 AND $2
+
+        UNION ALL
+
+        SELECT t.id,
+               NULL::integer as investment_id,
+               t.amount,
+               t.date,
+               t.source,
+               t.gmail_message_id,
+               t.created_at,
+               t.description as name,
+               'detected'::text as type
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        WHERE t.type='debit'
+        AND c.name='Investments'
+        AND t.date BETWEEN $1 AND $2
+      ) combined_investments
+      ORDER BY date DESC, created_at DESC
     `, [start, end]);
     res.json(rows);
   } catch (err) {
@@ -177,8 +196,20 @@ investmentsRouter.get('/ytd', async (req, res) => {
     const year = req.query.year || new Date().getFullYear();
     const { rows } = await pool.query(`
       SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
-      FROM investment_log
-      WHERE date >= $1 AND date <= $2
+      FROM (
+        SELECT il.amount
+        FROM investment_log il
+        WHERE il.date >= $1 AND il.date <= $2
+
+        UNION ALL
+
+        SELECT t.amount
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        WHERE t.type='debit'
+        AND c.name='Investments'
+        AND t.date >= $1 AND t.date <= $2
+      ) invested_rows
     `, [`${year}-01-01`, `${year}-12-31`]);
     res.json({ total: parseFloat(rows[0].total), count: parseInt(rows[0].count) });
   } catch (err) {

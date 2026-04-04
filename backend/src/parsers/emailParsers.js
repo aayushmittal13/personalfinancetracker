@@ -14,21 +14,42 @@ function parseAmount(str) {
 }
 
 function parseDate(str) {
-  if (!str) return new Date().toISOString().slice(0, 10);
-  // handle dd-mm-yyyy, dd/mm/yyyy, dd-mm-yy, yyyy-mm-dd, dd MMM yyyy
-  const parts = str.match(/(\d{2})[-/](\d{2})[-/](\d{4})/);
-  if (parts) return `${parts[3]}-${parts[2]}-${parts[1]}`;
-  const partsShort = str.match(/(\d{2})[-/](\d{2})[-/](\d{2})/);
-  if (partsShort) return `20${partsShort[3]}-${partsShort[2]}-${partsShort[1]}`;
-  const isoParts = str.match(/(\d{4})[-/](\d{2})[-/](\d{2})/);
-  if (isoParts) return `${isoParts[1]}-${isoParts[2]}-${isoParts[3]}`;
-  const parts2 = str.match(/(\d{2})\s+(\w{3})\s+(\d{4})/);
-  if (parts2) {
-    const months = { Jan:'01',Feb:'02',Mar:'03',Apr:'04',May:'05',Jun:'06',
-                     Jul:'07',Aug:'08',Sep:'09',Oct:'10',Nov:'11',Dec:'12' };
-    return `${parts2[3]}-${months[parts2[2]]}-${parts2[1]}`;
+  if (!str) return null;
+
+  const months = {
+    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+  };
+
+  const isoParts = str.match(/\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b/);
+  if (isoParts) {
+    return `${isoParts[1]}-${String(isoParts[2]).padStart(2, '0')}-${String(isoParts[3]).padStart(2, '0')}`;
   }
-  return new Date().toISOString().slice(0, 10);
+
+  const dmy = str.match(/\b(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})\b/);
+  if (dmy) {
+    const year = dmy[3].length === 2 ? `20${dmy[3]}` : dmy[3];
+    return `${year}-${String(dmy[2]).padStart(2, '0')}-${String(dmy[1]).padStart(2, '0')}`;
+  }
+
+  const named = str.match(/\b(\d{1,2})[\s-]+([A-Za-z]{3,9})[\s-]+(\d{2,4})\b/);
+  if (named) {
+    const month = months[named[2].slice(0, 3).toLowerCase()];
+    const year = named[3].length === 2 ? `20${named[3]}` : named[3];
+    if (month) {
+      return `${year}-${month}-${String(named[1]).padStart(2, '0')}`;
+    }
+  }
+
+  return null;
+}
+
+function cleanDescription(value, fallback) {
+  const normalized = String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\b(?:transaction reference number|utr|ref(?:erence)? no\.?|if you did not authorize|warm regards|hdfc bank)\b[\s\S]*$/i, '')
+    .trim();
+  return normalized || fallback;
 }
 
 // HDFC Bank debit/credit alerts
@@ -38,12 +59,12 @@ function parseHDFC(subject, body) {
   // Debit: "Rs.340.00 debited from A/c **4821 on 15-03-26. Info: SWIGGY"
   const debitMatch = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:has been\s+)?debited\s+from\s+(?:a\/?c|account)?\s*(?:ending\s+|xx|x{2}|\*{2,})?(\d{4})/i);
   if (debitMatch) {
-    const merchant = text.match(/(?:Info|towards|at|to)[:\s]+([^\n.]+)/i);
-    const dateMatch = text.match(/on\s+([\d\-\/]+)/i) || text.match(/dated?\s+([\d\-\/]+)/i);
+    const merchant = text.match(/(?:Info|towards|at|to)\s*:?\s+(.+?)(?=\s+on\s+[\dA-Za-z\-\/]+|\.\s+Your\b|,\s*bal\b|$)/i);
+    const dateMatch = text.match(/on\s+([\dA-Za-z\-\/\s]+)/i) || text.match(/dated?\s+([\dA-Za-z\-\/\s]+)/i);
     return {
       amount: parseAmount(debitMatch[1]),
       type: 'debit',
-      description: merchant ? merchant[1].trim() : 'HDFC debit',
+      description: cleanDescription(merchant ? merchant[1] : '', 'HDFC debit'),
       account_last4: debitMatch[2],
       date: parseDate(dateMatch ? dateMatch[1] : null),
       bank: 'HDFC'
@@ -53,12 +74,12 @@ function parseHDFC(subject, body) {
   // Credit: "Rs.85000.00 credited to A/c **4821"
   const creditMatch = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:has been\s+)?credited\s+to\s+(?:a\/?c|account)?\s*(?:ending\s+|xx|x{2}|\*{2,})?(\d{4})/i);
   if (creditMatch) {
-    const merchant = text.match(/(?:by|from|Info)[:\s]+([^\n.]+)/i);
-    const dateMatch = text.match(/on\s+([\d\-\/]+)/i) || text.match(/dated?\s+([\d\-\/]+)/i);
+    const merchant = text.match(/(?:by|from|Info)\s*:?\s+(.+?)(?=\s+on\s+[\dA-Za-z\-\/]+|\.\s+Your\b|,\s*bal\b|$)/i);
+    const dateMatch = text.match(/on\s+([\dA-Za-z\-\/\s]+)/i) || text.match(/dated?\s+([\dA-Za-z\-\/\s]+)/i);
     return {
       amount: parseAmount(creditMatch[1]),
       type: 'credit',
-      description: merchant ? merchant[1].trim() : 'HDFC credit',
+      description: cleanDescription(merchant ? merchant[1] : '', 'HDFC credit'),
       account_last4: creditMatch[2],
       date: parseDate(dateMatch ? dateMatch[1] : null),
       bank: 'HDFC'
@@ -73,7 +94,7 @@ function parseHDFCCard(subject, body) {
   const text = `${subject} ${body}`;
 
   // "Rs 340 spent on HDFC Bank Credit Card XX4821 at SWIGGY on 2026-03-15"
-  const match = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:spent|debited|used)\s+on\s+HDFC.*?(?:XX|x{2}|\*{2,}|ending\s+)(\d{4}).*?(?:at|towards)\s+([^\s][^\n]+?)\s+on\s+([\d\-\/\s\w]+)/i);
+  const match = text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:spent|debited|used)\s+on\s+HDFC.*?(?:XX|x{2}|\*{2,}|ending\s+)(\d{4}).*?(?:at|towards)\s+([^\s][^\n]+?)\s+on\s+([\dA-Za-z\-\/\s]+)/i);
   if (match) {
     return {
       amount: parseAmount(match[1]),
@@ -93,7 +114,7 @@ function parseAxis(subject, body) {
   const text = `${subject} ${body}`;
 
   // "INR 1,299.00 spent on your Axis Bank Credit Card XX1234 at AMAZON on 15-03-2026"
-  const match = text.match(/(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)\s+(?:spent|debited|used).*?(?:XX|x{2}|\*{2,}|ending\s+)(\d{4}).*?(?:at|@|towards)\s+([^\s][^\n]+?)\s+on\s+([\d\-\/]+)/i);
+  const match = text.match(/(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)\s+(?:spent|debited|used).*?(?:XX|x{2}|\*{2,}|ending\s+)(\d{4}).*?(?:at|@|towards)\s+([^\s][^\n]+?)\s+on\s+([\dA-Za-z\-\/\s]+)/i);
   if (match) {
     return {
       amount: parseAmount(match[1]),
@@ -113,7 +134,7 @@ function parseICICI(subject, body) {
   const text = `${subject} ${body}`;
 
   // "ICICI Bank Credit Card XX1234: Rs 500.00 spent at ZOMATO on 15/03/2026"
-  const match = text.match(/(?:ICICI[^\n]*?(?:XX|x{2})(\d{4})[^\n]*?|(?:XX|x{2})(\d{4}).*?ICICI).*?(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*).*?(?:spent at|at)\s+([^\n]+?)\s+on\s+([\d\/\-]+)/i);
+  const match = text.match(/(?:ICICI[^\n]*?(?:XX|x{2})(\d{4})[^\n]*?|(?:XX|x{2})(\d{4}).*?ICICI).*?(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*).*?(?:spent at|at)\s+([^\n]+?)\s+on\s+([\dA-Za-z\/\-\s]+)/i);
   if (match) {
     return {
       amount: parseAmount(match[3]),
@@ -133,7 +154,7 @@ function parseICICI(subject, body) {
       type: 'debit',
       description: match2[3].trim(),
       account_last4: match2[1],
-      date: new Date().toISOString().slice(0, 10),
+      date: null,
       bank: 'ICICI'
     };
   }
@@ -148,7 +169,7 @@ function parseIndusInd(subject, body) {
   // "INR 2500.00 debited from IndusInd Bank A/c XX1234 towards MERCHANT"
   const match = text.match(/(?:INR|Rs\.?|₹)\s*([\d,]+\.?\d*)\s+(?:debited|spent).*?(?:XX|x{2}|\*{2})(\d{4}).*?(?:towards|at|for)\s+([^\n.]+)/i);
   if (match) {
-    const dateMatch = text.match(/(?:on|date)[:\s]+([\d\-\/]+)/i);
+    const dateMatch = text.match(/(?:on|date)[:\s]+([\dA-Za-z\-\/\s]+)/i);
     return {
       amount: parseAmount(match[1]),
       type: 'debit',
@@ -170,7 +191,7 @@ function parseUPI(subject, body) {
   const sentMatch = text.match(/(?:sent|paid|debited)\s+(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:to|towards)\s+([^\s\n]+)/i)
     || text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*).*?\b(?:paid|sent|transferred)\b.*?\bto\b\s+([^\s\n]+)/i);
   if (sentMatch) {
-    const dateMatch = text.match(/(?:on|date)[:\s]+([\d\-\/]+)/i);
+    const dateMatch = text.match(/(?:on|date)[:\s]+([\dA-Za-z\-\/\s]+)/i);
     return {
       amount: parseAmount(sentMatch[1]),
       type: 'debit',
@@ -185,7 +206,7 @@ function parseUPI(subject, body) {
   const receivedMatch = text.match(/(?:received|credited)\s+(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:from)\s+([^\s\n]+)/i)
     || text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*).*?\b(?:received|credited)\b.*?\bfrom\b\s+([^\s\n]+)/i);
   if (receivedMatch) {
-    const dateMatch = text.match(/(?:on|date)[:\s]+([\d\-\/]+)/i);
+    const dateMatch = text.match(/(?:on|date)[:\s]+([\dA-Za-z\-\/\s]+)/i);
     return {
       amount: parseAmount(receivedMatch[1]),
       type: 'credit',

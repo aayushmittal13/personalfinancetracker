@@ -1,18 +1,6 @@
 const router = require('express').Router();
 const pool = require('../../db/pool');
-
-function getMonthRange(month) {
-  const [yearStr, monthStr] = month.split('-');
-  const year = Number(yearStr);
-  const monthIndex = Number(monthStr) - 1;
-  const start = new Date(Date.UTC(year, monthIndex, 1));
-  const end = new Date(Date.UTC(year, monthIndex + 1, 0));
-
-  return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10)
-  };
-}
+const { getMonthRange } = require('../utils/dateUtils');
 
 // GET /api/transactions?month=2026-03&limit=50&offset=0
 router.get('/', async (req, res) => {

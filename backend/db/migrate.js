@@ -62,10 +62,20 @@ async function migrate() {
         split_group TEXT CHECK (split_group IN ('house', 'friends')),
         is_recovered BOOLEAN DEFAULT false,
         gmail_message_id TEXT UNIQUE,
-        source TEXT NOT NULL CHECK (source IN ('gmail', 'manual')),
+        source TEXT NOT NULL CHECK (source IN ('gmail', 'manual', 'webhook')),
         raw_text TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW()
       )
+    `);
+
+    // Allow 'webhook' source (idempotent ALTER for existing databases)
+    await client.query(`
+      DO $$ BEGIN
+        ALTER TABLE transactions DROP CONSTRAINT IF EXISTS transactions_source_check;
+        ALTER TABLE transactions ADD CONSTRAINT transactions_source_check
+          CHECK (source IN ('gmail', 'manual', 'webhook'));
+      EXCEPTION WHEN others THEN NULL;
+      END $$
     `);
 
     // Fixed expenses - recurring every month
@@ -140,6 +150,33 @@ async function migrate() {
     await client.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_flatmate_payments_unique
       ON flatmate_payments (flatmate_id, transaction_id)
+    `);
+
+    // Budgets - monthly category budgets
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS budgets (
+        id SERIAL PRIMARY KEY,
+        category_id INTEGER REFERENCES categories(id),
+        amount NUMERIC(12,2) NOT NULL,
+        month TEXT,
+        is_active BOOLEAN DEFAULT true,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(category_id, month)
+      )
+    `);
+
+    // Recurring matches - link fixed expenses/investments to detected transactions
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS recurring_matches (
+        id SERIAL PRIMARY KEY,
+        transaction_id INTEGER REFERENCES transactions(id) ON DELETE CASCADE,
+        fixed_expense_id INTEGER REFERENCES fixed_expenses(id) ON DELETE SET NULL,
+        investment_id INTEGER REFERENCES investments(id) ON DELETE SET NULL,
+        month TEXT NOT NULL,
+        confidence NUMERIC(3,2) DEFAULT 0,
+        confirmed BOOLEAN DEFAULT false,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
     `);
 
     // Settings - salary, gmail token etc

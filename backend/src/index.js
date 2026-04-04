@@ -18,6 +18,8 @@ app.use('/api/flatmates',      flatmatesRouter);
 app.use('/api/dashboard',      require('./routes/dashboard'));
 app.use('/api/gmail',          require('./routes/gmail'));
 app.use('/api/settings',       settingsRouter);
+app.use('/api/webhook',        require('./routes/webhook'));
+app.use('/api/budgets',        require('./routes/budgets'));
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
@@ -27,3 +29,4 @@ app.listen(PORT, () => console.log(`Paisa backend running on ${PORT}`));
 // Start cron jobs - wrapped so startup errors don't break the server
 try { require('./jobs/reminder'); } catch(e) { console.error('Reminder job failed to load:', e.message); }
 try { require('./jobs/gmailSync'); } catch(e) { console.error('Gmail sync job failed to load:', e.message); }
+try { require('./jobs/recurringMatch'); } catch(e) { console.error('Recurring match job failed to load:', e.message); }

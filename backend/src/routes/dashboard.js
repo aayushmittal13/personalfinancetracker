@@ -10,7 +10,7 @@ router.get('/', async (req, res) => {
     const prevMonth = getPreviousMonth(month);
     const { start: prevStart, end: prevEnd } = getMonthRange(prevMonth);
 
-    const [income, spent, spentPrev, toRecover, invested, youOwe, pendingMatch, categories, categoriesPrev, daily] = await Promise.all([
+    const [income, spent, spentPrev, toRecover, invested, youOwe, pendingMatch, categories, categoriesPrev, daily, topMerchants, budgetSummary, totalTransactions] = await Promise.all([
       pool.query(`
         SELECT COALESCE(SUM(amount), 0) as total
         FROM transactions
@@ -111,7 +111,36 @@ router.get('/', async (req, res) => {
         FROM transactions
         WHERE type='debit' AND date >= NOW() - INTERVAL '7 days'
         GROUP BY date ORDER BY date ASC
-      `)
+      `),
+
+      pool.query(`
+        SELECT description, COUNT(*) as frequency,
+               COALESCE(SUM(CASE WHEN is_split THEN split_amount ELSE amount END), 0) as total
+        FROM transactions
+        WHERE type='debit' AND date BETWEEN $1 AND $2
+        GROUP BY description
+        ORDER BY total DESC
+        LIMIT 5
+      `, [start, end]),
+
+      pool.query(`
+        SELECT b.category_id, b.amount as budget, c.name as category_name, c.color,
+               COALESCE(SUM(CASE WHEN t.is_split THEN t.split_amount ELSE t.amount END), 0) as spent
+        FROM budgets b
+        JOIN categories c ON b.category_id = c.id
+        LEFT JOIN transactions t ON t.category_id = b.category_id
+          AND t.type = 'debit' AND t.date BETWEEN $1 AND $2
+        WHERE b.is_active = true AND (b.month IS NULL OR b.month = $3)
+        GROUP BY b.category_id, b.amount, c.name, c.color
+      `, [start, end, month]),
+
+      pool.query(`
+        SELECT COUNT(*) as count,
+               COUNT(*) FILTER (WHERE source = 'gmail') as gmail_count,
+               COUNT(*) FILTER (WHERE source = 'manual') as manual_count,
+               COUNT(*) FILTER (WHERE source = 'webhook') as webhook_count
+        FROM transactions WHERE date BETWEEN $1 AND $2
+      `, [start, end])
     ]);
 
     const prevCatMap = {};
@@ -131,26 +160,81 @@ router.get('/', async (req, res) => {
       }
     }
 
+    const incomeVal = parseFloat(income.rows[0].total);
+    const spentVal = parseFloat(spent.rows[0].total);
+    const spentPrevVal = parseFloat(spentPrev.rows[0].total);
+    const investedVal = parseFloat(invested.rows[0].total);
+
+    const savingsRate = incomeVal > 0
+      ? Math.round(((incomeVal - spentVal - investedVal) / incomeVal) * 100)
+      : 0;
+
+    const spentChange = spentPrevVal > 0
+      ? Math.round(((spentVal - spentPrevVal) / spentPrevVal) * 100)
+      : 0;
+
+    const totalCategorySpend = cats.reduce((s, c) => s + parseFloat(c.total), 0);
+    const categoriesWithPercent = cats.map(c => ({
+      ...c,
+      total: parseFloat(c.total),
+      prev: parseFloat(prevCatMap[c.name] || 0),
+      percent: totalCategorySpend > 0 ? Math.round((parseFloat(c.total) / totalCategorySpend) * 100) : 0,
+      change: parseFloat(prevCatMap[c.name] || 0) > 0
+        ? Math.round(((parseFloat(c.total) - parseFloat(prevCatMap[c.name])) / parseFloat(prevCatMap[c.name])) * 100)
+        : null
+    }));
+
+    const budgets = budgetSummary.rows.map(b => ({
+      category_name: b.category_name,
+      color: b.color,
+      budget: parseFloat(b.budget),
+      spent: parseFloat(b.spent),
+      remaining: parseFloat(b.budget) - parseFloat(b.spent),
+      percent: parseFloat(b.budget) > 0
+        ? Math.round((parseFloat(b.spent) / parseFloat(b.budget)) * 100)
+        : 0
+    }));
+
+    const overBudgetCategories = budgets.filter(b => b.percent > 100);
+
+    if (!insight && overBudgetCategories.length > 0) {
+      const worst = overBudgetCategories.sort((a, b) => b.percent - a.percent)[0];
+      insight = {
+        text: `${worst.category_name} is over budget`,
+        detail: `₹${Math.round(Math.abs(worst.remaining)).toLocaleString('en-IN')} over your ₹${Math.round(worst.budget).toLocaleString('en-IN')} budget`
+      };
+    }
+
     res.json({
       month,
       buckets: {
-        income: parseFloat(income.rows[0].total),
-        spent: parseFloat(spent.rows[0].total),
-        spent_prev: parseFloat(spentPrev.rows[0].total),
+        income: incomeVal,
+        spent: spentVal,
+        spent_prev: spentPrevVal,
+        spent_change: spentChange,
         to_recover: parseFloat(toRecover.rows[0].total),
         to_recover_count: parseInt(toRecover.rows[0].count),
-        invested: parseFloat(invested.rows[0].total),
+        invested: investedVal,
         invested_count: parseInt(invested.rows[0].count),
-        you_owe: parseFloat(youOwe.rows[0].total)
+        you_owe: parseFloat(youOwe.rows[0].total),
+        savings_rate: savingsRate
       },
-      categories: categories.rows.map(c => ({
-        ...c,
-        total: parseFloat(c.total),
-        prev: parseFloat(prevCatMap[c.name] || 0)
-      })),
+      categories: categoriesWithPercent,
       daily: daily.rows,
       pending_match: pendingMatch.rows[0] || null,
-      insight
+      insight,
+      top_merchants: topMerchants.rows.map(m => ({
+        description: m.description,
+        frequency: parseInt(m.frequency),
+        total: parseFloat(m.total)
+      })),
+      budgets,
+      transaction_counts: {
+        total: parseInt(totalTransactions.rows[0].count),
+        gmail: parseInt(totalTransactions.rows[0].gmail_count),
+        manual: parseInt(totalTransactions.rows[0].manual_count),
+        webhook: parseInt(totalTransactions.rows[0].webhook_count)
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

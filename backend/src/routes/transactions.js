@@ -101,6 +101,57 @@ router.patch('/:id/split', async (req, res) => {
   }
 });
 
+// GET /api/transactions/export?month=2026-03&format=csv
+router.get('/export', async (req, res) => {
+  try {
+    const { month } = req.query;
+    let where = '';
+    const params = [];
+
+    if (month) {
+      const range = getMonthRange(month);
+      params.push(range.start);
+      params.push(range.end);
+      where = `WHERE t.date BETWEEN $1 AND $2`;
+    }
+
+    const { rows } = await pool.query(`
+      SELECT t.date, t.description, t.amount, t.type,
+             c.name as category, a.name as account, a.bank,
+             t.source, t.is_split, t.split_amount, t.split_group
+      FROM transactions t
+      LEFT JOIN categories c ON t.category_id = c.id
+      LEFT JOIN accounts a ON t.account_id = a.id
+      ${where}
+      ORDER BY t.date DESC, t.created_at DESC
+    `, params);
+
+    const headers = ['Date', 'Description', 'Amount', 'Type', 'Category', 'Account', 'Bank', 'Source', 'Is Split', 'Split Amount', 'Split Group'];
+    const csvRows = rows.map(r => [
+      r.date,
+      `"${(r.description || '').replace(/"/g, '""')}"`,
+      r.amount,
+      r.type,
+      r.category || '',
+      r.account || '',
+      r.bank || '',
+      r.source,
+      r.is_split ? 'Yes' : 'No',
+      r.split_amount || '',
+      r.split_group || ''
+    ].join(','));
+
+    const csv = [headers.join(','), ...csvRows].join('\n');
+    const filename = month ? `transactions-${month}.csv` : 'transactions-all.csv';
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/transactions/:id
 router.delete('/:id', async (req, res) => {
   try {

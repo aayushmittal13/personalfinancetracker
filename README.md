@@ -90,3 +90,82 @@ npm start
 
 Frontend runs on `http://localhost:3000`, backend on `http://localhost:3001`.
 The frontend API client auto-detects localhost and points to port 3001.
+
+---
+
+## Webhook Import API
+
+Import transactions from external sources (SMS parsers, n8n workflows, Telegram bots, etc.) via a REST webhook.
+
+### Single transaction
+
+```bash
+curl -X POST https://YOUR-BACKEND-URL/api/webhook/import \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Secret: YOUR_SECRET" \
+  -d '{
+    "sender": "Jupiter",
+    "amount": "340.00",
+    "type": "debit",
+    "date": "2026-04-01",
+    "message": "UPI txn of Rs.340 to Swiggy",
+    "description": "Swiggy order",
+    "category": "Food",
+    "source_id": "unique-sms-id-123"
+  }'
+```
+
+### Batch import
+
+```bash
+curl -X POST https://YOUR-BACKEND-URL/api/webhook/import/batch \
+  -H "Content-Type: application/json" \
+  -d '{ "transactions": [ ... ] }'
+```
+
+Set `WEBHOOK_SECRET` in env to require authentication. The `source_id` field prevents duplicate imports.
+
+---
+
+## Budget Tracking
+
+Set monthly budgets per category to track spending limits:
+
+- Navigate to the **Budget** tab in the app
+- Set a target amount for each spending category
+- Progress bars show real-time spending vs budget
+- Dashboard shows budget alerts when categories are over limit
+
+---
+
+## Telegram Notifications
+
+Get transaction alerts and daily summaries via Telegram:
+
+1. Create a bot via [@BotFather](https://t.me/BotFather) and get the bot token
+2. Get your Chat ID (send a message to the bot, then visit `https://api.telegram.org/bot<TOKEN>/getUpdates`)
+3. Set these via the settings API:
+
+```bash
+curl -X POST https://YOUR-BACKEND-URL/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{ "key": "telegram_bot_token", "value": "YOUR_BOT_TOKEN" }'
+
+curl -X POST https://YOUR-BACKEND-URL/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{ "key": "telegram_chat_id", "value": "YOUR_CHAT_ID" }'
+```
+
+Features:
+- Daily expense summary at 9 PM IST
+- Projected monthly spend based on daily average
+
+---
+
+## CSV Export
+
+Export transactions as CSV from the Transactions tab or directly via API:
+
+```bash
+curl https://YOUR-BACKEND-URL/api/transactions/export?month=2026-03 -o transactions.csv
+```

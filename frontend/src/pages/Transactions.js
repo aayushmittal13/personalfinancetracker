@@ -117,6 +117,9 @@ export default function Transactions({ month }) {
     <div>
       <div className="topbar">
         <div className="topbar-title">Transactions</div>
+        <button className="sync-btn" onClick={() => window.open(api.exportUrl(month), '_blank')}>
+          ↓ Export
+        </button>
       </div>
 
       <div style={{ padding: '0 20px 12px' }}>

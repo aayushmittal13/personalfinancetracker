@@ -3,6 +3,7 @@ import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
 import Investments from './pages/Investments';
 import Fixed from './pages/Fixed';
+import Budgets from './pages/Budgets';
 import Onboarding from './pages/Onboarding';
 import { api } from './api/client';
 import './App.css';
@@ -28,6 +29,7 @@ export default function App() {
         {tab === 'dashboard'    && <Dashboard month={month} setMonth={setMonth} />}
         {tab === 'transactions' && <Transactions month={month} />}
         {tab === 'investments'  && <Investments month={month} />}
+        {tab === 'budgets'      && <Budgets month={month} />}
         {tab === 'fixed'        && <Fixed />}
       </div>
 
@@ -43,6 +45,10 @@ export default function App() {
         <button className={`bni ${tab === 'investments' ? 'active' : ''}`} onClick={() => setTab('investments')}>
           <span className="bni-icon">↗</span>
           <span>Invest</span>
+        </button>
+        <button className={`bni ${tab === 'budgets' ? 'active' : ''}`} onClick={() => setTab('budgets')}>
+          <span className="bni-icon">◎</span>
+          <span>Budget</span>
         </button>
         <button className={`bni ${tab === 'fixed' ? 'active' : ''}`} onClick={() => setTab('fixed')}>
           <span className="bni-icon">◈</span>

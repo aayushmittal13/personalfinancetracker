@@ -111,5 +111,15 @@ export const api = {
 
   // Settings
   settings: () => req('GET', '/api/settings'),
-  setSetting: (key, value) => req('POST', '/api/settings', { key, value })
+  setSetting: (key, value) => req('POST', '/api/settings', { key, value }),
+
+  // Budgets
+  budgets: (month) => req('GET', `/api/budgets?month=${month}`),
+  budgetSummary: (month) => req('GET', `/api/budgets/summary?month=${month}`),
+  addBudget: (data) => req('POST', '/api/budgets', data),
+  updateBudget: (id, data) => req('PATCH', `/api/budgets/${id}`, data),
+  deleteBudget: (id) => req('DELETE', `/api/budgets/${id}`),
+
+  // Export
+  exportUrl: (month) => buildApiUrl(`/api/transactions/export?month=${month}`)
 };

@@ -256,6 +256,17 @@ export default function Dashboard({ month, setMonth }) {
         </div>
       )}
 
+      {/* Spent change indicator */}
+      {b.spent_change !== 0 && b.spent_change !== undefined && (
+        <div className="nudge" style={{
+          borderColor: b.spent_change > 0 ? '#e7bbbb' : '#b8dcc8',
+          background: b.spent_change > 0 ? '#fff5f5' : '#f0faf5',
+          color: b.spent_change > 0 ? 'var(--red)' : 'var(--green)'
+        }}>
+          Spending is {b.spent_change > 0 ? 'up' : 'down'} {Math.abs(b.spent_change)}% compared to last month.
+        </div>
+      )}
+
       {/* Daily trend */}
       {data?.daily?.length > 0 && (
         <div className="trend-wrap">
@@ -278,20 +289,97 @@ export default function Dashboard({ month, setMonth }) {
         </div>
       )}
 
+      {/* Savings Rate */}
+      {b.savings_rate !== undefined && b.income > 0 && (
+        <div className="insight" style={{ borderLeftColor: b.savings_rate >= 20 ? 'var(--green)' : b.savings_rate >= 0 ? 'var(--amber)' : 'var(--red)' }}>
+          <strong>Savings rate: {b.savings_rate}%</strong> — {b.savings_rate >= 20 ? 'Great job saving this month!' : b.savings_rate >= 0 ? 'Try to save a bit more.' : 'Spending exceeds income this month.'}
+        </div>
+      )}
+
+      {/* Budgets */}
+      {data?.budgets?.length > 0 && (
+        <>
+          <div className="sh">Budget tracker</div>
+          <div className="block">
+            {data.budgets.map((bg, i) => (
+              <div className="block-row no-hover" key={i}>
+                <div className="row-left" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className="cat-pip" style={{ background: bg.color }} />
+                      <span className="row-main">{bg.category_name}</span>
+                    </div>
+                    <span style={{ fontSize: 11, color: bg.percent > 100 ? 'var(--red)' : bg.percent >= 80 ? 'var(--amber)' : 'var(--sub)' }}>
+                      {bg.percent}%
+                    </span>
+                  </div>
+                  <div style={{ height: 4, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${Math.min(bg.percent, 100)}%`,
+                      background: bg.percent > 100 ? 'var(--red)' : bg.percent >= 80 ? 'var(--amber)' : 'var(--green)',
+                      borderRadius: 2,
+                      transition: 'width 0.3s'
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--sub)' }}>
+                    <span>₹{fmt(bg.spent)} spent</span>
+                    <span>₹{fmt(bg.budget)} budget</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       {/* Categories */}
       {data?.categories?.length > 0 && (
         <>
-          <div className="sh">Categories</div>
+          <div className="section-header">
+            <div className="sh" style={{ padding: 0, marginBottom: 0 }}>Categories</div>
+            <button className="section-action" onClick={() => window.open(api.exportUrl(month), '_blank')}>
+              Export CSV
+            </button>
+          </div>
           <div className="block">
             {data.categories.map((c, i) => (
               <div className="block-row no-hover" key={i}>
                 <div className="row-left">
                   <div className="cat-pip" style={{ background: c.color }} />
-                  <div className="row-main">{c.name}</div>
+                  <div>
+                    <div className="row-main">{c.name}</div>
+                    {c.percent > 0 && <div className="row-meta">{c.percent}% of spend</div>}
+                  </div>
                 </div>
                 <div className="row-right">
                   <div className="row-amt">₹{fmt(c.total)}</div>
-                  <div className="row-sub">vs ₹{fmt(c.prev)} prev</div>
+                  <div className="row-sub" style={{ color: c.change !== null && c.change > 0 ? 'var(--red)' : c.change !== null && c.change < 0 ? 'var(--green)' : 'var(--sub)' }}>
+                    {c.change !== null ? `${c.change > 0 ? '+' : ''}${c.change}% vs prev` : `vs ₹${fmt(c.prev)} prev`}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Top Merchants */}
+      {data?.top_merchants?.length > 0 && (
+        <>
+          <div className="sh">Top merchants</div>
+          <div className="block">
+            {data.top_merchants.map((m, i) => (
+              <div className="block-row no-hover" key={i}>
+                <div className="row-left">
+                  <div style={{ fontSize: 12, color: 'var(--sub)', width: 18, textAlign: 'center', flexShrink: 0 }}>{i + 1}</div>
+                  <div>
+                    <div className="row-main">{m.description}</div>
+                    <div className="row-meta">{m.frequency} transaction{m.frequency !== 1 ? 's' : ''}</div>
+                  </div>
+                </div>
+                <div className="row-right">
+                  <div className="row-amt">₹{fmt(m.total)}</div>
                 </div>
               </div>
             ))}

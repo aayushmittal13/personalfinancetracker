@@ -2,8 +2,9 @@ const assert = require('assert');
 
 const { parseEmail } = require('../src/parsers/emailParsers');
 const { categorize, ruleBasedCategory } = require('../src/parsers/categorizer');
-const { getMonthRange, getPreviousMonth } = require('../src/utils/dateUtils');
+const { getMonthRange, getPreviousMonth, toIsoDateFromEpochMs } = require('../src/utils/dateUtils');
 const { buildSyncQuery, getQueryStartEpoch } = require('../src/utils/gmailSyncUtils');
+// recurringMatch is tested implicitly via cron; unit tests focus on parsers/utils
 
 const tests = [];
 
@@ -80,6 +81,81 @@ test('builds incremental Gmail sync query with overlap', () => {
 test('rule matching is boundary aware', () => {
   assert.strictEqual(ruleBasedCategory('payment to zerodha') , 'Investments');
   assert.notStrictEqual(ruleBasedCategory('payment to zerodha'), 'House');
+});
+
+test('categorizes subscription services correctly', async () => {
+  assert.strictEqual(await categorize('Netflix Monthly renewal', 499, 'debit'), 'Subscriptions');
+  assert.strictEqual(await categorize('Spotify premium', 119, 'debit'), 'Subscriptions');
+  assert.strictEqual(await categorize('YouTube Premium', 129, 'debit'), 'Subscriptions');
+});
+
+test('categorizes health-related expenses correctly', async () => {
+  assert.strictEqual(await categorize('Apollo pharmacy medicines', 500, 'debit'), 'Health');
+  assert.strictEqual(await categorize('Dr. Sharma clinic consultation', 800, 'debit'), 'Health');
+});
+
+test('categorizes transport correctly', async () => {
+  assert.strictEqual(await categorize('Uber trip to office', 250, 'debit'), 'Transport');
+  assert.strictEqual(await categorize('Ola cab', 180, 'debit'), 'Transport');
+  assert.strictEqual(await categorize('IRCTC train booking', 1200, 'debit'), 'Transport');
+});
+
+test('categorizes house expenses correctly', async () => {
+  assert.strictEqual(await categorize('Monthly rent payment', 15000, 'debit'), 'House');
+  assert.strictEqual(await categorize('Airtel WiFi broadband', 699, 'debit'), 'House');
+  assert.strictEqual(await categorize('Electricity BESCOM bill', 2500, 'debit'), 'House');
+});
+
+test('toIsoDateFromEpochMs handles valid and invalid inputs', () => {
+  assert.strictEqual(toIsoDateFromEpochMs(1712000000000), '2024-04-01');
+  assert.strictEqual(toIsoDateFromEpochMs(null), null);
+  assert.strictEqual(toIsoDateFromEpochMs(0), null);
+  assert.strictEqual(toIsoDateFromEpochMs('invalid'), null);
+});
+
+test('getMonthRange returns correct ranges for leap years', () => {
+  assert.deepStrictEqual(getMonthRange('2024-02'), {
+    start: '2024-02-01',
+    end: '2024-02-29'
+  });
+  assert.deepStrictEqual(getMonthRange('2026-12'), {
+    start: '2026-12-01',
+    end: '2026-12-31'
+  });
+});
+
+test('parses HDFC credit alert correctly', () => {
+  const parsed = parseEmail(
+    'HDFC Bank Credit Alert',
+    'Rs.85000.00 has been credited to A/c **4821 on 01-04-2026. Info: SALARY NEFT',
+    'alerts@hdfcbank.net'
+  );
+  assert(parsed, 'expected parser to return a transaction');
+  assert.strictEqual(parsed.amount, 85000);
+  assert.strictEqual(parsed.type, 'credit');
+  assert.strictEqual(parsed.account_last4, '4821');
+});
+
+test('parses UPI sent payment correctly', () => {
+  const parsed = parseEmail(
+    'UPI Payment',
+    'You have sent Rs.340 to swiggy@upi on 15-03-2026',
+    'alerts@hdfcbank.net'
+  );
+  assert(parsed, 'expected parser to return a transaction');
+  assert.strictEqual(parsed.amount, 340);
+  assert.strictEqual(parsed.type, 'debit');
+});
+
+test('parses UPI received payment correctly', () => {
+  const parsed = parseEmail(
+    'UPI Credit',
+    'You have received Rs.6500 from rahul@upi on 15-03-2026',
+    'alerts@hdfcbank.net'
+  );
+  assert(parsed, 'expected parser to return a transaction');
+  assert.strictEqual(parsed.amount, 6500);
+  assert.strictEqual(parsed.type, 'credit');
 });
 
 async function main() {

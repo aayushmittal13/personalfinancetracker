@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const pool = require('../../db/pool');
+const { sendDailySummary } = require('../utils/telegram');
 
 function getISTDate() {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -16,7 +17,6 @@ cron.schedule('30 15 * * *', async () => {
     );
     if (parseInt(rows[0].count) === 0) {
       console.log(`[Reminder] No manual transactions logged today (${today})`);
-      // Update a flag in settings that the frontend can poll
       await pool.query(`
         INSERT INTO settings (key, value) VALUES ('reminder_pending', 'true')
         ON CONFLICT (key) DO UPDATE SET value='true', updated_at=NOW()
@@ -27,6 +27,10 @@ cron.schedule('30 15 * * *', async () => {
         ON CONFLICT (key) DO UPDATE SET value='false', updated_at=NOW()
       `);
     }
+
+    sendDailySummary().catch(err =>
+      console.error('[Reminder] Telegram daily summary failed:', err.message)
+    );
   } catch (err) {
     console.error('[Reminder] Error:', err.message);
   }

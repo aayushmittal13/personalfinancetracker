@@ -30,20 +30,44 @@ export default function Transactions({ month }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [search, setSearch] = useState('');
+  const [loadError, setLoadError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const [t, p, c, a] = await Promise.all([
+      const [t, p, c, a] = await Promise.allSettled([
         api.transactions(month),
         api.pendingTransactions(),
         api.categories(),
         api.accounts()
       ]);
-      setTxns(t);
-      setPendingTxns(p);
-      setCategories(c);
-      setAccounts(a);
+
+      if (t.status === 'fulfilled') setTxns(t.value);
+      else {
+        console.error(t.reason);
+        setTxns([]);
+        setLoadError(t.reason?.message || 'Transactions failed to load.');
+      }
+
+      if (p.status === 'fulfilled') setPendingTxns(p.value);
+      else {
+        console.error(p.reason);
+        setPendingTxns([]);
+        setLoadError(prev => prev || p.reason?.message || 'Pending review queue failed to load.');
+      }
+
+      if (c.status === 'fulfilled') setCategories(c.value);
+      else {
+        console.error(c.reason);
+        setCategories([]);
+      }
+
+      if (a.status === 'fulfilled') setAccounts(a.value);
+      else {
+        console.error(a.reason);
+        setAccounts([]);
+      }
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [month]);
@@ -164,6 +188,12 @@ export default function Transactions({ month }) {
       <button className="add-txn-btn" onClick={openAdd}>
         + Add transaction
       </button>
+
+      {loadError && (
+        <div className="sync-note error">
+          {loadError}
+        </div>
+      )}
 
       {filteredPending.length > 0 && (
         <>

@@ -12,20 +12,23 @@ export default function Investments({ month }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
   const [selected, setSelected] = useState(null);
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [inv, l, a, y] = await Promise.all([
+      const [inv, l, a, y, d] = await Promise.all([
         api.investments(),
         api.investmentLog(month),
         api.accounts(),
-        api.investmentYtd()
+        api.investmentYtd(),
+        api.dashboard(month)
       ]);
       setInvestments(inv);
       setLog(l);
       setAccounts(a);
       setYtd(y);
+      setPendingReviewCount(d.pending_review_count || 0);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }, [month]);
@@ -82,6 +85,12 @@ export default function Investments({ month }) {
           <div className="inv-sum-note">{ytd.count} items · {new Date().getFullYear()}</div>
         </div>
       </div>
+
+      {pendingReviewCount > 0 && (
+        <div className="nudge">
+          {pendingReviewCount} imported transaction{pendingReviewCount === 1 ? '' : 's'} still waiting for review in Txns. Confirm them there before they show up here.
+        </div>
+      )}
 
       {/* SIPs */}
       <div className="sh">SIPs</div>

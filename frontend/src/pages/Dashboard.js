@@ -183,6 +183,12 @@ export default function Dashboard({ month, setMonth }) {
         </div>
       )}
 
+      {(data?.pending_review_count || 0) > 0 && (
+        <div className="nudge">
+          {data.pending_review_count} imported transaction{data.pending_review_count === 1 ? '' : 's'} waiting in the review queue. Open Txns to confirm them before they affect totals.
+        </div>
+      )}
+
       {loadError && (
         <div className="sync-note error">
           {loadError}

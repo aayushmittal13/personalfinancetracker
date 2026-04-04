@@ -11,7 +11,7 @@ router.get('/', async (req, res) => {
     const prevMonth = getPreviousMonth(month);
     const { start: prevStart, end: prevEnd } = getMonthRange(prevMonth);
 
-    const [income, spent, spentPrev, toRecover, invested, youOwe, pendingMatch, categories, categoriesPrev, daily, reviewQueue] = await Promise.all([
+    const [income, spent, spentPrev, toRecover, invested, youOwe, pendingMatch, categories, categoriesPrev, daily, reviewQueue, todayCount] = await Promise.all([
       pool.query(`
         SELECT COALESCE(SUM(amount), 0) as total
         FROM transactions
@@ -128,6 +128,13 @@ router.get('/', async (req, res) => {
         SELECT COUNT(*)::int as count
         FROM transactions
         WHERE review_status='pending'
+      `),
+
+      pool.query(`
+        SELECT COUNT(*)::int as count
+        FROM transactions
+        WHERE review_status='confirmed'
+        AND date = CURRENT_DATE
       `)
     ]);
 
@@ -168,6 +175,7 @@ router.get('/', async (req, res) => {
       daily: daily.rows,
       pending_match: pendingMatch.rows[0] || null,
       pending_review_count: reviewQueue.rows[0]?.count || 0,
+      today_count: todayCount.rows[0]?.count || 0,
       insight
     });
   } catch (err) {

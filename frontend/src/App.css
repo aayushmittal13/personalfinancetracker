@@ -360,6 +360,29 @@ html, body {
   font-family: 'Geist Mono', monospace;
 }
 .section-action:hover { color: var(--text); }
+.inline-select-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.inline-select-row .modal-select {
+  flex: 1;
+}
+.mini-action {
+  flex-shrink: 0;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--white);
+  color: var(--sub);
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+.mini-action:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
 .review-count {
   min-width: 22px;
   height: 22px;

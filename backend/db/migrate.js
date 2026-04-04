@@ -64,6 +64,7 @@ async function migrate() {
         gmail_message_id TEXT UNIQUE,
         source TEXT NOT NULL CHECK (source IN ('gmail', 'manual')),
         raw_text TEXT,
+        note TEXT,
         review_status TEXT NOT NULL DEFAULT 'confirmed' CHECK (review_status IN ('pending', 'confirmed')),
         review_reason TEXT,
         parse_confidence NUMERIC(4,2),
@@ -72,6 +73,10 @@ async function migrate() {
       )
     `);
 
+    await client.query(`
+      ALTER TABLE transactions
+      ADD COLUMN IF NOT EXISTS note TEXT
+    `);
     await client.query(`
       ALTER TABLE transactions
       ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'confirmed'

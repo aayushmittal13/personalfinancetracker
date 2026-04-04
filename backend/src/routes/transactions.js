@@ -63,7 +63,7 @@ router.get('/review', async (req, res) => {
 // POST /api/transactions - manual add
 router.post('/', async (req, res) => {
   try {
-    const { date, description, amount, type, account_id, category_id } = req.body;
+    const { date, description, amount, type, account_id, category_id, note } = req.body;
     if (!date || !description || !amount || !type) {
       return res.status(400).json({ error: 'Date, description, amount, and type are required' });
     }
@@ -71,10 +71,10 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Type must be debit or credit' });
     }
     const { rows } = await pool.query(`
-      INSERT INTO transactions (date, description, amount, type, account_id, category_id, source, review_status, reviewed_at)
-      VALUES ($1, $2, $3, $4, $5, $6, 'manual', 'confirmed', NOW())
+      INSERT INTO transactions (date, description, amount, type, account_id, category_id, note, source, review_status, reviewed_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'manual', 'confirmed', NOW())
       RETURNING *
-    `, [date, description, amount, type, nullableId(account_id), nullableId(category_id)]);
+    `, [date, description, amount, type, nullableId(account_id), nullableId(category_id), note || null]);
     res.json(rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -84,7 +84,7 @@ router.post('/', async (req, res) => {
 // PATCH /api/transactions/:id - update any fields
 router.patch('/:id', async (req, res) => {
   try {
-    const { description, amount, type, date, category_id, account_id } = req.body;
+    const { description, amount, type, date, category_id, account_id, note } = req.body;
     const { rows } = await pool.query(`
       UPDATE transactions
       SET description = COALESCE($1, description),
@@ -93,11 +93,12 @@ router.patch('/:id', async (req, res) => {
           date = COALESCE($4, date),
           category_id = $5,
           account_id = $6,
+          note = $7,
           review_status = 'confirmed',
           reviewed_at = NOW(),
           review_reason = NULL
-      WHERE id = $7 RETURNING *
-    `, [description, amount, type, date, nullableId(category_id), nullableId(account_id), req.params.id]);
+      WHERE id = $8 RETURNING *
+    `, [description, amount, type, date, nullableId(category_id), nullableId(account_id), note ?? null, req.params.id]);
     if (!rows[0]) return res.status(404).json({ error: 'Transaction not found' });
     res.json(rows[0]);
   } catch (err) {
@@ -109,7 +110,7 @@ router.patch('/:id/review', async (req, res) => {
   const client = await pool.connect();
 
   try {
-    const { description, amount, type, date, category_id, account_id, learn_rule = true } = req.body;
+    const { description, amount, type, date, category_id, account_id, note, learn_rule = true } = req.body;
     if (!category_id) {
       return res.status(400).json({ error: 'Category is required to confirm a transaction' });
     }
@@ -127,6 +128,7 @@ router.patch('/:id/review', async (req, res) => {
     const nextType = type ?? txn.type;
     const nextDate = date ?? txn.date;
     const nextAccountId = account_id === undefined ? txn.account_id : nullableId(account_id);
+    const nextNote = note ?? txn.note;
 
     const { rows } = await client.query(`
       UPDATE transactions
@@ -136,12 +138,13 @@ router.patch('/:id/review', async (req, res) => {
           date = $4,
           category_id = $5,
           account_id = $6,
+          note = $7,
           review_status = 'confirmed',
           reviewed_at = NOW(),
           review_reason = NULL
-      WHERE id = $7
+      WHERE id = $8
       RETURNING *
-    `, [nextDescription, nextAmount, nextType, nextDate, nullableId(category_id), nextAccountId, req.params.id]);
+    `, [nextDescription, nextAmount, nextType, nextDate, nullableId(category_id), nextAccountId, nextNote, req.params.id]);
 
     if (learn_rule && txn.source === 'gmail') {
       const pattern = merchantKeyFromDescription(nextDescription);

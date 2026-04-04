@@ -17,13 +17,13 @@ function emptyForm(categories) {
     amount: '',
     category_id: categories[0]?.id || '',
     account_id: '',
+    note: '',
     learn_rule: true
   };
 }
 
 export default function Transactions({ month }) {
   const [txns, setTxns] = useState([]);
-  const [pendingTxns, setPendingTxns] = useState([]);
   const [categories, setCategories] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,9 +36,8 @@ export default function Transactions({ month }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const [t, p, c, a] = await Promise.allSettled([
+      const [t, c, a] = await Promise.allSettled([
         api.transactions(month),
-        api.pendingTransactions(),
         api.categories(),
         api.accounts()
       ]);
@@ -48,13 +47,6 @@ export default function Transactions({ month }) {
         console.error(t.reason);
         setTxns([]);
         setLoadError(t.reason?.message || 'Transactions failed to load.');
-      }
-
-      if (p.status === 'fulfilled') setPendingTxns(p.value);
-      else {
-        console.error(p.reason);
-        setPendingTxns([]);
-        setLoadError(prev => prev || p.reason?.message || 'Pending review queue failed to load.');
       }
 
       if (c.status === 'fulfilled') setCategories(c.value);
@@ -119,6 +111,7 @@ export default function Transactions({ month }) {
       date: String(txn.date).slice(0, 10),
       category_id: txn.category_id || '',
       account_id: txn.account_id || '',
+      note: txn.note || '',
       learn_rule: true
     });
     setModal({ mode, txn });
@@ -169,6 +162,19 @@ export default function Transactions({ month }) {
 
   if (loading) return <div className="loading">Loading...</div>;
 
+  const addCategory = async () => {
+    const name = window.prompt('New category name');
+    if (!name) return;
+    try {
+      const created = await api.addCategory({ name });
+      const next = [...categories, created].sort((a, b) => a.name.localeCompare(b.name));
+      setCategories(next);
+      setForm(prev => ({ ...prev, category_id: created.id }));
+    } catch (e) {
+      alert(e.message);
+    }
+  };
+
   return (
     <div>
       <div className="topbar">
@@ -195,39 +201,10 @@ export default function Transactions({ month }) {
         </div>
       )}
 
-      {filteredPending.length > 0 && (
-        <>
-          <div className="section-header">
-            <div className="sh" style={{ padding: 0, marginBottom: 0 }}>Needs review</div>
-            <div className="review-count">{filteredPending.length}</div>
-          </div>
-          <div className="review-list">
-            {filteredPending.map(txn => (
-              <button className="review-card" key={txn.id} onClick={() => openEdit(txn, 'review')}>
-                <div className="review-card-top">
-                  <div className="review-card-title">{txn.description}</div>
-                  <div className={`row-amt ${txn.type === 'credit' ? 'cr' : ''}`}>
-                    {txn.type === 'credit' ? '+' : ''}₹{fmt(txn.amount)}
-                  </div>
-                </div>
-                <div className="review-card-meta">
-                  <span>{dateLabel(txn.date)}</span>
-                  <span>{txn.account_name || 'No account matched'}</span>
-                </div>
-                <div className="review-card-tags">
-                  <span className="tag pending">{txn.review_reason || 'Pending review'}</span>
-                  <span className="tag confirm">{txn.category_name || 'Pick category'}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {Object.keys(grouped).length === 0 && filteredPending.length === 0 && (
+      {Object.keys(grouped).length === 0 && (
         <div className="empty">
           {search ? 'No matching transactions.' : 'No transactions this month.'}<br />
-          {!search && 'Add one or sync Gmail.'}
+          {!search && 'Add one or review imports first.'}
         </div>
       )}
 
@@ -308,12 +285,15 @@ export default function Transactions({ month }) {
 
             <div className="modal-field">
               <div className="modal-label">Category</div>
-              <select className="modal-select"
-                value={form.category_id}
-                onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}>
-                <option value="">Uncategorized</option>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <div className="inline-select-row">
+                <select className="modal-select"
+                  value={form.category_id}
+                  onChange={e => setForm(f => ({ ...f, category_id: e.target.value }))}>
+                  <option value="">Uncategorized</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <button className="mini-action" onClick={addCategory}>+ category</button>
+              </div>
             </div>
 
             {accounts.length > 0 && (
@@ -327,6 +307,13 @@ export default function Transactions({ month }) {
                 </select>
               </div>
             )}
+
+            <div className="modal-field">
+              <div className="modal-label">Note</div>
+              <input className="modal-input" placeholder="Optional note"
+                value={form.note || ''}
+                onChange={e => setForm(f => ({ ...f, note: e.target.value }))} />
+            </div>
 
             {modal.mode === 'review' && (
               <label className="modal-check">

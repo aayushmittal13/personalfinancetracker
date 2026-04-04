@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Dashboard from './pages/Dashboard';
+import Review from './pages/Review';
 import Transactions from './pages/Transactions';
 import Investments from './pages/Investments';
 import Fixed from './pages/Fixed';
@@ -26,6 +27,7 @@ export default function App() {
     <div className="app">
       <div className="page">
         {tab === 'dashboard'    && <Dashboard month={month} setMonth={setMonth} />}
+        {tab === 'review'       && <Review />}
         {tab === 'transactions' && <Transactions month={month} />}
         {tab === 'investments'  && <Investments month={month} />}
         {tab === 'fixed'        && <Fixed />}
@@ -35,6 +37,10 @@ export default function App() {
         <button className={`bni ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}>
           <span className="bni-icon">⌂</span>
           <span>Home</span>
+        </button>
+        <button className={`bni ${tab === 'review' ? 'active' : ''}`} onClick={() => setTab('review')}>
+          <span className="bni-icon">◎</span>
+          <span>Review</span>
         </button>
         <button className={`bni ${tab === 'transactions' ? 'active' : ''}`} onClick={() => setTab('transactions')}>
           <span className="bni-icon">↕</span>

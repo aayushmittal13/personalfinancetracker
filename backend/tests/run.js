@@ -75,11 +75,32 @@ test('builds incremental Gmail sync query with overlap', () => {
   assert.match(query, /after:1712056800/);
   assert.match(query, /alerts@hdfcbank\.bank\.in/);
   assert.match(query, /transaction reference/);
+  assert.doesNotMatch(query, /\sOR\s\(/);
 });
 
 test('rule matching is boundary aware', () => {
   assert.strictEqual(ruleBasedCategory('payment to zerodha') , 'Investments');
   assert.notStrictEqual(ruleBasedCategory('payment to zerodha'), 'House');
+});
+
+test('does not parse generic non-transaction marketing text as UPI', () => {
+  const parsed = parseEmail(
+    'Special offer',
+    'Enjoy rewards up to Rs.10000 when transferred to serving customers better this summer.',
+    'alerts@hdfcbank.bank.in'
+  );
+
+  assert.strictEqual(parsed, null);
+});
+
+test('does not parse unknown senders as transactions', () => {
+  const parsed = parseEmail(
+    'Receipt',
+    'You have sent Rs.340 to merchant@upi on 03-04-26.',
+    'promo@example.com'
+  );
+
+  assert.strictEqual(parsed, null);
 });
 
 async function main() {

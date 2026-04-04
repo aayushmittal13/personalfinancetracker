@@ -32,7 +32,7 @@ function buildSyncQuery({ lastSyncEpoch, now = Date.now() }) {
   const afterEpoch = getQueryStartEpoch(lastSyncEpoch, now);
   const senderQuery = `from:(${DEFAULT_BANK_SENDERS.join(' OR ')})`;
   const keywordQuery = `(${DEFAULT_BANK_KEYWORDS.join(' OR ')})`;
-  return [`after:${afterEpoch}`, `(${senderQuery} OR ${keywordQuery})`].join(' ');
+  return [`after:${afterEpoch}`, senderQuery, keywordQuery].join(' ');
 }
 
 module.exports = {

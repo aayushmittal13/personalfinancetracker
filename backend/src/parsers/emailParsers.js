@@ -52,6 +52,18 @@ function cleanDescription(value, fallback) {
   return normalized || fallback;
 }
 
+function hasUpiContext(text) {
+  return /\b(?:upi|vpa|utr|transaction reference|ref(?:erence)? number)\b/i.test(text || '');
+}
+
+function looksLikeUpiHandle(value) {
+  return /[a-z0-9._-]+@[a-z0-9.-]+/i.test(String(value || '').trim());
+}
+
+function isGenericNoiseDescription(value) {
+  return /^(?:serving|customer|payment|transaction|account|bank|details?)$/i.test(String(value || '').trim());
+}
+
 // HDFC Bank debit/credit alerts
 function parseHDFC(subject, body) {
   const text = `${subject} ${body}`;
@@ -186,16 +198,23 @@ function parseIndusInd(subject, body) {
 // UPI payment confirmation (works across banks)
 function parseUPI(subject, body) {
   const text = `${subject} ${body}`;
+  if (!hasUpiContext(text)) return null;
+
+  const vpaMatch = text.match(/\b(?:to|from)\s+VPA\s+(.+?)(?=\s+on\s+[\dA-Za-z\-\/]+|\.\s+Your\b|\s+transaction reference|\s+reference number|\s+utr\b|,\s*bal\b|$)/i);
+  const vpaDescription = cleanDescription(vpaMatch ? vpaMatch[1] : '', '');
 
   // Sent: "You have sent Rs.340 to merchant@upi"
   const sentMatch = text.match(/(?:sent|paid|debited)\s+(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:to|towards)\s+([^\s\n]+)/i)
     || text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*).*?\b(?:paid|sent|transferred)\b.*?\bto\b\s+([^\s\n]+)/i);
   if (sentMatch) {
+    const rawDescription = vpaDescription || sentMatch[2].trim();
+    if (!vpaDescription && !looksLikeUpiHandle(rawDescription)) return null;
+    if (isGenericNoiseDescription(rawDescription)) return null;
     const dateMatch = text.match(/(?:on|date)[:\s]+([\dA-Za-z\-\/\s]+)/i);
     return {
       amount: parseAmount(sentMatch[1]),
       type: 'debit',
-      description: sentMatch[2].trim(),
+      description: rawDescription,
       account_last4: null,
       date: parseDate(dateMatch ? dateMatch[1] : null),
       bank: 'UPI'
@@ -206,11 +225,14 @@ function parseUPI(subject, body) {
   const receivedMatch = text.match(/(?:received|credited)\s+(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*)\s+(?:from)\s+([^\s\n]+)/i)
     || text.match(/(?:Rs\.?|INR|₹)\s*([\d,]+\.?\d*).*?\b(?:received|credited)\b.*?\bfrom\b\s+([^\s\n]+)/i);
   if (receivedMatch) {
+    const rawDescription = vpaDescription || receivedMatch[2].trim();
+    if (!vpaDescription && !looksLikeUpiHandle(rawDescription)) return null;
+    if (isGenericNoiseDescription(rawDescription)) return null;
     const dateMatch = text.match(/(?:on|date)[:\s]+([\dA-Za-z\-\/\s]+)/i);
     return {
       amount: parseAmount(receivedMatch[1]),
       type: 'credit',
-      description: receivedMatch[2].trim(),
+      description: rawDescription,
       account_last4: null,
       date: parseDate(dateMatch ? dateMatch[1] : null),
       bank: 'UPI'
@@ -237,8 +259,7 @@ function parseEmail(subject, body, from) {
     return parseIndusInd(subject, body) || parseUPI(subject, body);
   }
 
-  // Fallback: try UPI parser for any bank notification
-  return parseUPI(subject, body);
+  return null;
 }
 
 module.exports = { parseEmail, parseHDFC, parseHDFCCard, parseAxis, parseICICI, parseIndusInd, parseUPI };

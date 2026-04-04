@@ -66,8 +66,13 @@ export const api = {
   dashboard: (month) => req('GET', `/api/dashboard?month=${month}`),
 
   // Transactions
-  transactions: (month) => req('GET', `/api/transactions?month=${month}`),
-  pendingTransactions: () => req('GET', '/api/transactions/review'),
+  transactions: (month, options = {}) => {
+    const params = new URLSearchParams();
+    if (month) params.set('month', month);
+    if (options.review_status) params.set('review_status', options.review_status);
+    return req('GET', `/api/transactions${params.toString() ? `?${params.toString()}` : ''}`);
+  },
+  pendingTransactions: () => req('GET', '/api/transactions?review_status=pending'),
   addTransaction: (data) => req('POST', '/api/transactions', data),
   updateTransaction: (id, data) => req('PATCH', `/api/transactions/${id}`, data),
   reviewTransaction: (id, data) => req('PATCH', `/api/transactions/${id}/review`, data),
